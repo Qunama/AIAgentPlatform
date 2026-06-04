@@ -93,6 +93,7 @@ builder.Services.AddHostedService<AgentWorkerService>();
 // 10. КОНТРОЛЛЕРЫ И SWAGGER
 // ==========================================
 builder.Services.AddControllers();
+builder.Services.AddRazorPages().AddRazorRuntimeCompilation();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -124,9 +125,10 @@ app.UseSwaggerUI(options =>
 });
 
 // Редирект с корневого URL на Swagger
-app.MapGet("/", () => Results.Redirect("/swagger"));
+app.MapGet("/", () => Results.Redirect("/Index"));
 
 app.MapControllers();
+app.MapRazorPages();
 app.MapHub<ProjectAIAgent.Host.Hubs.AgentHub>("/hubs/agent");
 
 // Проверяем CLI-режим

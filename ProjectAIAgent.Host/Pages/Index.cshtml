@@ -1,0 +1,279 @@
+@page
+@model ProjectAIAgent.Host.Pages.IndexModel
+@{
+    ViewData["Title"] = "AI Agent Platform";
+}
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Agent Platform</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: system-ui, sans-serif; 
+            background: #1a1a2e; 
+            color: #e0e0e0; 
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header { 
+            background: #16213e; 
+            padding: 20px 30px; 
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { color: #e94560; font-size: 1.5em; }
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        .status-idle { background: #0f3460; color: #a0a0a0; }
+        .status-working { background: #e94560; color: white; animation: pulse 1.5s infinite; }
+        @@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        .container { 
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px 30px;
+            flex: 1;
+        }
+        .panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #0f3460;
+        }
+        .panel h3 { color: #e94560; margin-bottom: 15px; font-size: 1.1em; }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #0f3460;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 1em;
+            resize: vertical;
+            min-height: 100px;
+        }
+        textarea:focus { outline: none; border-color: #e94560; }
+        
+        button {
+            margin-top: 12px;
+            padding: 10px 24px;
+            border-radius: 8px;
+            border: none;
+            font-size: 1em;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #c23152; }
+        .btn-primary:disabled { background: #555; cursor: not-allowed; }
+        
+        #log-container {
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+        .log-entry { padding: 4px 0; border-bottom: 1px solid #0f3460; }
+        .log-phase { color: #e94560; }
+        .log-tool { color: #4ecca3; }
+        .log-build { color: #ffd700; }
+        .log-error { color: #ff4444; }
+        .log-success { color: #4ecca3; }
+        .log-time { color: #666; margin-right: 10px; }
+        
+        #result {
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 0.85em;
+            line-height: 1.5;
+        }
+        
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+        .history-table th, .history-table td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #0f3460;
+        }
+        .history-table th { color: #e94560; }
+
+        @@media (max-width: 800px) {
+            .container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 AI Agent Platform</h1>
+        <span id="status-badge" class="status-badge status-idle">Idle</span>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h3>📝 Запрос</h3>
+            <textarea id="query" placeholder="Опишите, что нужно сделать..."></textarea>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn-primary" id="send-btn" onclick="sendRequest()">Отправить</button>
+                <span id="progress" style="color: #666; display: none;">⏳ Обработка...</span>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>📊 Результат</h3>
+            <div id="result" style="color: #666;">Ожидание запроса...</div>
+        </div>
+        
+        <div class="panel">
+            <h3>📜 Лог выполнения</h3>
+            <div id="log-container"></div>
+        </div>
+        
+        <div class="panel">
+            <h3>📋 История</h3>
+            <div id="history-container" style="color: #666;">Загрузка...</div>
+        </div>
+    </div>
+
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/agent")
+            .build();
+
+        let isProcessing = false;
+
+        connection.on("ProgressUpdate", (data) => {
+            addLog("phase", `${data.phase}: ${data.message}`);
+            updateStatus(data.phase);
+        });
+
+        connection.on("ToolExecuted", (data) => {
+            const icon = data.success ? "✅" : "❌";
+            addLog("tool", `${icon} ${data.tool}${data.summary ? ': ' + data.summary.substring(0, 100) : ''}`);
+        });
+
+        connection.on("BuildCompleted", (data) => {
+            const icon = data.success ? "✅" : "❌";
+            addLog("build", `${icon} Build (attempt ${data.attempt}): ${data.summary.substring(0, 150)}`);
+        });
+
+        connection.on("RequestCompleted", (data) => {
+            const icon = data.success ? "✅" : "❌";
+            addLog(data.success ? "success" : "error", `${icon} Request completed`);
+            document.getElementById("result").innerHTML = data.report;
+            document.getElementById("progress").style.display = "none";
+            document.getElementById("send-btn").disabled = false;
+            isProcessing = false;
+            updateStatus("Idle");
+            loadHistory();
+        });
+
+        connection.on("ErrorOccurred", (data) => {
+            addLog("error", `❌ ${data.error}`);
+        });
+
+        async function startConnection() {
+            try {
+                await connection.start();
+                addLog("success", "✅ Connected to agent");
+            } catch (err) {
+                addLog("error", `❌ Connection failed: ${err}`);
+            }
+        }
+
+        function addLog(type, message) {
+            const container = document.getElementById("log-container");
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement("div");
+            entry.className = `log-entry log-${type}`;
+            entry.innerHTML = `<span class="log-time">${time}</span>${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateStatus(phase) {
+            const badge = document.getElementById("status-badge");
+            if (phase === "Idle") {
+                badge.className = "status-badge status-idle";
+                badge.textContent = "Idle";
+            } else {
+                badge.className = "status-badge status-working";
+                badge.textContent = phase;
+            }
+        }
+
+        async function sendRequest() {
+            const query = document.getElementById("query").value.trim();
+            if (!query || isProcessing) return;
+            
+            isProcessing = true;
+            document.getElementById("send-btn").disabled = true;
+            document.getElementById("progress").style.display = "inline";
+            document.getElementById("result").textContent = "Обработка...";
+            
+            try {
+                const response = await fetch("/api/agent/request", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: query })
+                });
+            } catch (err) {
+                addLog("error", `❌ Request failed: ${err}`);
+                isProcessing = false;
+                document.getElementById("send-btn").disabled = false;
+                document.getElementById("progress").style.display = "none";
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch("/api/agent/history?limit=5");
+                const history = await response.json();
+                const container = document.getElementById("history-container");
+                
+                if (history.length === 0) {
+                    container.innerHTML = "<span style='color:#666'>История пуста</span>";
+                    return;
+                }
+                
+                let html = '<table class="history-table"><tr><th>Время</th><th>Статус</th><th>Запрос</th></tr>';
+                for (const item of history) {
+                    const time = new Date(item.timestamp).toLocaleTimeString();
+                    const icon = item.success ? "✅" : "❌";
+                    html += `<tr><td>${time}</td><td>${icon}</td><td>${item.request.substring(0, 80)}</td></tr>`;
+                }
+                html += '</table>';
+                container.innerHTML = html;
+            } catch (err) {
+                document.getElementById("history-container").textContent = "Ошибка загрузки";
+            }
+        }
+
+        // Enter для отправки
+        document.getElementById("query").addEventListener("keydown", (e) => {
+            if (e.ctrlKey && e.key === "Enter") sendRequest();
+        });
+
+        startConnection();
+        loadHistory();
+    </script>
+</body>
+</html>
