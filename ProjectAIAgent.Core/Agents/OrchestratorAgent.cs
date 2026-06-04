@@ -1,6 +1,7 @@
 // ProjectAIAgent.Core/Agents/OrchestratorAgent.cs
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ProjectAIAgent.Core.Models;
 using ProjectAIAgent.Core.Services;
@@ -21,6 +22,9 @@ public class OrchestratorAgent : BaseAgent
     private readonly ReportService _reportService;
     private const int MaxIterations = 10;
     
+    // Опциональный сервис SignalR (может быть null в консольном режиме)
+    private readonly object? _signalRService;
+    
     public OrchestratorAgent(
         ILogger<OrchestratorAgent> logger,
         IServiceProvider serviceProvider,
@@ -36,6 +40,10 @@ public class OrchestratorAgent : BaseAgent
         _buildValidation = buildValidation ?? throw new ArgumentNullException(nameof(buildValidation));
         _reportService = reportService ?? throw new ArgumentNullException(nameof(reportService));
         _llmService = llmService;
+        
+        // Пытаемся получить SignalRLoggingService (может отсутствовать в консольном режиме)
+        _signalRService = serviceProvider.GetService(
+            Type.GetType("ProjectAIAgent.Host.SignalRLoggingService, ProjectAIAgent.Host", throwOnError: false));
     }
     
     public async Task<string> ProcessRequestAsync(string userRequest)
@@ -52,6 +60,8 @@ public class OrchestratorAgent : BaseAgent
         Logger.LogInformation("Orchestrator received request: {Request}", userRequest);
         
         _contextAgent.SetPhase(WorkPhase.Planning);
+        await SendPhaseUpdateAsync(WorkPhase.Planning);
+        
         var contextSummary = _contextAgent.GetContextSummary();
         
         if (_llmService == null)
@@ -84,6 +94,7 @@ public class OrchestratorAgent : BaseAgent
             Logger.LogDebug("Orchestrator iteration {Iteration}/{MaxIterations}", iteration, MaxIterations);
             
             _contextAgent.SetPhase(WorkPhase.Executing);
+            await SendPhaseUpdateAsync(WorkPhase.Executing);
             
             llmCallCount++;
             var llmResponse = await _llmService.GenerateAsync(
@@ -103,9 +114,7 @@ public class OrchestratorAgent : BaseAgent
                 errors.Add("Failed to parse LLM response");
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
-                conversationHistory.AppendLine("[USER]: Respond with valid JSON. " +
-                    "{\"action\":\"delegate\",\"tool\":\"tool_name\",\"args\":{...}} or " +
-                    "{\"action\":\"report\",\"message\":\"...\"}");
+                conversationHistory.AppendLine("[USER]: Respond with valid JSON.");
                 continue;
             }
             
@@ -118,6 +127,7 @@ public class OrchestratorAgent : BaseAgent
             if (action == "report")
             {
                 _contextAgent.SetPhase(WorkPhase.Reporting);
+                await SendPhaseUpdateAsync(WorkPhase.Reporting);
                 success = true;
                 
                 finalMessage = 
@@ -133,7 +143,6 @@ public class OrchestratorAgent : BaseAgent
             {
                 var toolName = actionPlan.TryGetValue("tool", out var t) ? t?.ToString() : "unknown";
                 
-                // Если запрошен dotnet build — выполняем через BuildValidationService
                 if (toolName == "run_shell_command" && 
                     actionPlan.TryGetValue("args", out var rawArgs) &&
                     rawArgs is Dictionary<string, object> buildArgs &&
@@ -142,12 +151,15 @@ public class OrchestratorAgent : BaseAgent
                 {
                     buildAttemptCount++;
                     _contextAgent.SetPhase(WorkPhase.Validating);
+                    await SendPhaseUpdateAsync(WorkPhase.Validating);
                     
                     var projectPath = _contextAgent.GetContext().ProjectPath;
                     if (string.IsNullOrWhiteSpace(projectPath))
                         projectPath = Directory.GetCurrentDirectory();
                     
                     var buildResult = await _buildValidation.BuildAsync(projectPath);
+                    
+                    await SendBuildResultAsync(buildResult.Success, buildResult.AttemptNumber, buildResult.GetSummary());
                     
                     if (buildResult.Success)
                         validationResult = $"✅ Сборка успешна (попытка {buildResult.AttemptNumber})";
@@ -162,19 +174,16 @@ public class OrchestratorAgent : BaseAgent
                     
                     if (buildResult.Success)
                     {
-                        conversationHistory.AppendLine("[USER]: Build succeeded! Changes are valid. " +
-                            "Show git diff to see what changed, then report the result.");
+                        conversationHistory.AppendLine("[USER]: Build succeeded! Show git diff, then report.");
                     }
                     else if (buildResult.ShouldRetry)
                     {
                         conversationHistory.AppendLine("[USER]: Build failed. " +
-                            $"You have {buildResult.RemainingAttempts} attempts left. " +
-                            "Analyze the errors above, fix the code with write_file, then run dotnet build again.");
+                            $"You have {buildResult.RemainingAttempts} attempts left. Fix the errors and retry.");
                     }
                     else
                     {
-                        conversationHistory.AppendLine("[USER]: All build attempts exhausted. " +
-                            "Report the failure with the errors and suggest manual intervention.");
+                        conversationHistory.AppendLine("[USER]: All build attempts exhausted. Report the failure.");
                     }
                     continue;
                 }
@@ -184,6 +193,8 @@ public class OrchestratorAgent : BaseAgent
                 
                 var toolResult = await ExecuteToolFromPlan(actionPlan);
                 var toolSuccess = !toolResult.StartsWith("Error");
+                
+                await SendToolExecutionAsync(toolName, toolSuccess, toolResult.Truncate(200));
                 
                 if (toolSuccess)
                     RegisterToolSuccess(toolName, actionPlan);
@@ -200,19 +211,15 @@ public class OrchestratorAgent : BaseAgent
                 
                 if (toolSuccess && (toolName == "write_file" || toolName == "update_documentation"))
                 {
-                    conversationHistory.AppendLine("[USER]: File modified. " +
-                        "Run 'dotnet build' to validate. " +
-                        "Use: {\"action\":\"delegate\",\"tool\":\"run_shell_command\",\"args\":{\"command\":\"dotnet build\"}}");
+                    conversationHistory.AppendLine("[USER]: File modified. Run 'dotnet build' to validate.");
                 }
                 else if (toolName == "run_shell_command")
                 {
-                    conversationHistory.AppendLine("[USER]: Command executed. If it succeeded, proceed. " +
-                        "If it failed, fix the errors and retry. Respond ONLY with JSON.");
+                    conversationHistory.AppendLine("[USER]: Command executed. Proceed or fix errors.");
                 }
                 else
                 {
-                    conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? " +
-                        "Respond ONLY with JSON.");
+                    conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? Respond ONLY with JSON.");
                 }
                 continue;
             }
@@ -222,19 +229,19 @@ public class OrchestratorAgent : BaseAgent
             Logger.LogWarning("Unknown action: {Action}", action);
             conversationHistory.AppendLine();
             conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
-            conversationHistory.AppendLine("[USER]: Unknown action. Valid: 'delegate' or 'report'. Respond ONLY with JSON.");
+            conversationHistory.AppendLine("[USER]: Unknown action. Valid: 'delegate' or 'report'.");
         }
         
         if (!success && string.IsNullOrEmpty(finalMessage))
         {
-            finalMessage = "⚠️ Достигнут лимит итераций. Пожалуйста, уточните запрос.";
+            finalMessage = "⚠️ Достигнут лимит итераций.";
             Logger.LogWarning("Orchestrator reached max iterations ({MaxIterations})", MaxIterations);
         }
         
         _contextAgent.RecordInteraction(userRequest, finalMessage, success);
         _contextAgent.SetPhase(WorkPhase.Idle);
+        await SendPhaseUpdateAsync(WorkPhase.Idle);
         
-        // Генерируем форматированный отчёт
         var modifiedFiles = _contextAgent.GetContext().ModifiedFiles;
         
         var reportData = new ReportData
@@ -251,7 +258,60 @@ public class OrchestratorAgent : BaseAgent
             ToolCallCount = toolCallCount
         };
         
-        return _reportService.GenerateReport(reportData);
+        var report = _reportService.GenerateReport(reportData);
+        await SendFinalResultAsync(success, report);
+        
+        return report;
+    }
+    
+    // Приватные методы для SignalR (безопасно вызываются через reflection-подобный паттерн)
+    
+    private async Task SendPhaseUpdateAsync(WorkPhase phase)
+    {
+        if (_signalRService == null) return;
+        try
+        {
+            var method = _signalRService.GetType().GetMethod("SendPhaseUpdateAsync");
+            if (method != null)
+                await (Task)method.Invoke(_signalRService, new object[] { phase });
+        }
+        catch { /* SignalR не критичен */ }
+    }
+    
+    private async Task SendToolExecutionAsync(string toolName, bool success, string? summary)
+    {
+        if (_signalRService == null) return;
+        try
+        {
+            var method = _signalRService.GetType().GetMethod("SendToolExecutionAsync");
+            if (method != null)
+                await (Task)method.Invoke(_signalRService, new object?[] { toolName, success, summary });
+        }
+        catch { }
+    }
+    
+    private async Task SendBuildResultAsync(bool success, int attempt, string summary)
+    {
+        if (_signalRService == null) return;
+        try
+        {
+            var method = _signalRService.GetType().GetMethod("SendBuildResultAsync");
+            if (method != null)
+                await (Task)method.Invoke(_signalRService, new object?[] { success, attempt, summary });
+        }
+        catch { }
+    }
+    
+    private async Task SendFinalResultAsync(bool success, string report)
+    {
+        if (_signalRService == null) return;
+        try
+        {
+            var method = _signalRService.GetType().GetMethod("SendFinalResultAsync");
+            if (method != null)
+                await (Task)method.Invoke(_signalRService, new object?[] { success, report });
+        }
+        catch { }
     }
     
     private async Task<string> BuildSystemPromptAsync(string contextSummary)

@@ -105,6 +105,12 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ==========================================
+// 10.5. SIGNALR
+// ==========================================
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<SignalRLoggingService>();
+
+// ==========================================
 // 11. СБОРКА И ЗАПУСК
 // ==========================================
 var app = builder.Build();
@@ -121,6 +127,7 @@ app.UseSwaggerUI(options =>
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.MapControllers();
+app.MapHub<ProjectAIAgent.Host.Hubs.AgentHub>("/hubs/agent");
 
 // Проверяем CLI-режим
 var cliArgs = args.Where(a => !a.StartsWith("--")).ToList();
