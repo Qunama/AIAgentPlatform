@@ -72,10 +72,10 @@ builder.Services.AddAgentTools(typeof(BaseAgent).Assembly);
 // ==========================================
 // 8. АГЕНТЫ
 // ==========================================
+builder.Services.AddSingleton<ContextAgent>();          // Первым — от него зависит OrchestratorAgent
 builder.Services.AddSingleton<OrchestratorAgent>();
 builder.Services.AddSingleton<CodeEditorAgent>();
 builder.Services.AddSingleton<DocumentationAgent>();
-builder.Services.AddSingleton<ContextAgent>();
 
 // ==========================================
 // 9. ФОНОВЫЕ СЛУЖБЫ

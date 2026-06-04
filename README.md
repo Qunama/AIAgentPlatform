@@ -3,7 +3,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 МИССИЯ ПРОЕКТА
 Создать AI-агента на .NET 8, который получает запросы на естественном языке, самостоятельно вносит правки в указанный пользователем .NET проект, автоматически ведёт и читает документацию, понимая общую картину работы.
 
-ТЕКУЩАЯ СТАДИЯ: Этап 1 завершён. Этап 2 завершён. Этап 3 завершён. Этап 4 — следующий.
+ТЕКУЩАЯ СТАДИЯ: Этап 1 завершён. Этап 2 завершён. Этап 3 завершён. Этап 4 завершён. Этап 5 — следующий.
 
 ЧТО УЖЕ СДЕЛАНО (ЭТАП 1: АРХИТЕКТУРА И ПОДГОТОВКА ОКРУЖЕНИЯ)
 - Создано .NET 8 решение с проектами ProjectAIAgent.Host (Worker Service) и ProjectAIAgent.Core (Class Library).
@@ -19,30 +19,42 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 - Создан атрибут AgentToolAttribute для автоматической регистрации инструментов с именем и описанием.
 - Реализован ToolRegistry — центральный реестр инструментов. Автоматически собирает все реализации IAgentTool через DI. Предоставляет методы GetTool, ExecuteToolAsync и GetToolsDescription для генерации описания инструментов в системных промптах.
 - Реализовано расширение AddAgentTools для автоматической регистрации всех инструментов из сборки через рефлексию.
-- Созданы заготовки четырёх агентов:
-  - OrchestratorAgent — принимает запросы, планирует и делегирует задачи. Имеет доступ к ToolRegistry для динамического формирования промптов с описанием инструментов.
-  - CodeEditorAgent — специализируется на чтении и изменении файлов. Предоставляет методы ReadFileAsync и WriteFileAsync, которые внутри вызывают соответствующие инструменты.
-  - DocumentationAgent — агент для работы с документацией (заглушка, функционал на Этапе 4).
-  - ContextAgent — агент управления контекстом проекта (заглушка, функционал на Этапе 4).
-- Реализованы три базовых инструмента:
-  - ReadFileTool — читает содержимое файла. Поддерживает относительные и абсолютные пути. Возвращает контент и метаданные (размер, дата изменения, количество строк). Валидирует входные параметры.
-  - WriteFileTool — записывает содержимое в файл. Автоматически создаёт родительские директории при необходимости. Отслеживает, был ли файл новым или изменён существующий.
+- Созданы четыре агента:
+  - OrchestratorAgent — принимает запросы, планирует и делегирует задачи. Использует ContextAgent для контекста. Реализован полный цикл оркестрации.
+  - CodeEditorAgent — специализируется на чтении и изменении файлов. Предоставляет методы ReadFileAsync и WriteFileAsync.
+  - DocumentationAgent — агент для работы с документацией. Использует DocumentationService и ReadDocumentationTool/UpdateDocumentationTool.
+  - ContextAgent — агент управления контекстом проекта. Хранит историю взаимодействий, текущую фазу, кеширует структуру проекта.
+- Реализованы пять инструментов:
+  - ReadFileTool — чтение содержимого файла. Поддерживает относительные и абсолютные пути. Возвращает контент и метаданные (размер, дата изменения, количество строк). Валидирует входные параметры.
+  - WriteFileTool — запись содержимого в файл. Автоматически создаёт родительские директории при необходимости. Отслеживает, был ли файл новым или изменён существующий.
   - ProjectStructureTool — сканирует структуру проекта и возвращает дерево файлов и директорий. Поддерживает ограничение глубины сканирования. Исключает служебные директории (bin, obj, .git, node_modules). Форматирует размеры файлов в человекочитаемом виде.
+  - ReadDocumentationTool — семантический поиск по индексированной документации. Векторизует запрос через Ollama embeddings, ищет в Qdrant, возвращает отформатированные результаты с релевантностью.
+  - UpdateDocumentationTool — обновление или создание секций в файлах документации. Поддерживает замену существующей секции (## Section) или добавление новой. После записи автоматически реиндексирует файл в Qdrant.
 - Написаны системные промпты для агентов, хранящиеся в отдельных файлах в Core/Prompts/:
-  - orchestrator.txt — определяет рабочий процесс оркестратора: запрос, загрузка контекста, планирование, делегирование, валидация, документирование, отчёт. Содержит правила валидации через dotnet build и ограничение на количество попыток исправления ошибок (до 3 раз).
-  - code-editor.txt — правила для редактирования кода: сохранение стиля, минимальные изменения, XML-документация, современные C# практики.
-  - documentation.txt — правила для работы с документацией: язык (русский основной, английские резюме), актуализация при изменениях API.
-- Создан AgentWorkerService в Host-проекте — фоновая служба, запускающая агента. Реализует интерактивный цикл обработки пользовательских запросов в консоли. Выводит информацию о зарегистрированных инструментах при старте. Поддерживает два режима: режим Агента (полный цикл оркестрации) и режим Тестирования промптов (прямой вызов LLM).
-- Создан ILlmService как абстракция над Ollama (заглушка на Этапе 2, реализован на Этапе 3).
-- Создан класс LlmService с реальной логикой (на Этапе 3).
+  - orchestrator.txt — определяет рабочий процесс оркестратора: запрос, загрузка контекста, планирование, делегирование, валидация, документирование, отчёт. Содержит правила валидации через dotnet build и ограничение на количество попыток исправления ошибок (до 3 раз). Улучшен по результатам тестирования.
+  - code-editor.txt — правила для редактирования кода: сохранение стиля, минимальные изменения, XML-документация, современные C# практики. Улучшен по результатам тестирования.
+  - documentation.txt — правила для работы с документацией: язык (русский основной, английские резюме), актуализация при изменениях API, запрет на выдумывание параметров. Улучшен по результатам тестирования.
+- Создан AgentWorkerService в Host-проекте — фоновая служба, запускающая агента. Реализует интерактивный цикл обработки пользовательских запросов в консоли. Поддерживает два режима: режим Агента (полный цикл оркестрации) и режим Тестирования промптов (прямой вызов LLM).
+- Создан ILlmService как абстракция над Ollama. Реализован LlmService с Polly-ретраями.
 - Создан класс OllamaOptions для конфигурации Ollama (BaseUrl, Model, MaxTokens, Temperature, TopP, TimeoutSeconds, MaxRetries, RetryDelaySeconds, TotalTimeoutSeconds).
-- Создан интерфейс IOllamaApiClient как тонкая обёртка для HttpClient.
+- Создан интерфейс IOllamaApiClient и реализация OllamaApiClientWrapper для прямых HTTP-вызовов /api/generate.
+- Создан IOllamaEmbeddingClient и реализация OllamaEmbeddingClient для вызовов /api/embeddings.
+- Создан класс AgentOptions для конфигурации агента (ProjectPath, MaxRetries, RequireConfirmation, AutoCommit, WatchDocumentation).
+- Создан класс QdrantOptions для конфигурации Qdrant (Endpoint, VectorSize, CollectionName).
+- Создан IDocumentationService и DocumentationService для поиска, разбиения на чанки и векторизации документации.
+- Создан IQdrantService и QdrantService для работы с Qdrant REST API (создание коллекций, вставка точек, семантический поиск).
+- Создан DocumentationIndexerService (IHostedService) для индексации всей документации при старте агента.
+- Создан DocumentationWatcherService (IHostedService) для отслеживания изменений в .md/.txt файлах с автоматической реиндексацией.
+- Создан PromptLoader для загрузки и кеширования системных промптов.
+- Создан PromptTesterService для интерактивного тестирования промптов в обход агентов.
+- Создан LlmResponseParser для парсинга ответов LLM (извлечение кода из Markdown, JSON-планов).
+- Созданы модели: DocumentChunk, ProjectContext, InteractionRecord, WorkPhase, QdrantPoint, QdrantSearchResult.
 - Написаны юнит-тесты для инструментов:
   - ReadFileToolTests: тест на успешное чтение файла, тест на отсутствующий файл, тест на отсутствующий параметр path.
   - WriteFileToolTests: тест на успешную запись файла, тест на создание вложенных директорий.
 - Обнаружена проблема с пакетом Microsoft.Agents.Hosting — данный NuGet-пакет не существует. Принято решение использовать собственную оркестрацию через AgentWorkerService и OrchestratorAgent вместо внешнего фреймворка.
 - Сборка проходит успешно (0 ошибок, 3 предупреждения CS8601 о возможно nullable-ссылках в OllamaApiClientWrapper, которые будут исправлены при финальной чистке кода).
-- В процессе исправления ошибок сборки добавлены необходимые NuGet-пакеты: Microsoft.Extensions.Logging.Abstractions, Microsoft.Extensions.DependencyInjection.Abstractions, OllamaSharp, Polly.Core в Core-проект; Microsoft.Extensions.Http в Host-проект.
+- В процессе добавлены NuGet-пакеты: Microsoft.Extensions.Logging.Abstractions, Microsoft.Extensions.DependencyInjection.Abstractions, Microsoft.Extensions.Http, OllamaSharp, Polly.Core.
 
 Ключевые решения Этапа 2:
 - Каждый агент наследует BaseAgent и использует GetTool<T>() для доступа к инструментам через DI.
@@ -56,7 +68,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 ЧТО СДЕЛАНО (ЭТАП 3: ИНТЕГРАЦИЯ ЛОКАЛЬНОЙ МОДЕЛИ)
 - Реализован ILlmService с реальной логикой вызова Ollama. Сервис принимает системный промпт и сообщение пользователя, формирует промпт в нативном формате qwen2.5-coder (токены <|system|>, <|user|>, <|assistant|>, <|end|>) и возвращает ответ модели.
 - Реализован парсинг ответов модели — класс LlmResponseParser:
-  - ExtractCodeBlock / ExtractAllCodeBlocks — извлечение кода из Markdown-блоков (```csharp ... ```).
+  - ExtractCodeBlock / ExtractAllCodeBlocks — извлечение кода из Markdown-блоков.
   - ExtractActionPlan / ExtractJson — извлечение структурированных JSON-планов из ответов (поддерживает чистый JSON, JSON в Markdown-блоках, JSON в тексте).
   - ExtractTextWithoutCode — получение текста без кодовых блоков.
   - ContainsCode — проверка наличия кода в ответе.
@@ -72,11 +84,10 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 - Добавлена обработка ошибок и ретраи через Polly:
   - ResiliencePipeline с Retry + Timeout.
   - Повторяются только сетевые ошибки (HttpRequestException, TaskCanceledException). Ошибка 404 (модель не найдена) не ретраится.
-  - Экспоненциальная задержка: 2с → 4с → 8с.
+  - Экспоненциальная задержка: 2с -> 4с -> 8с.
   - Логирование при каждом ретрае.
 - Передан ProjectPath в инструменты через IOptions<AgentOptions>:
-  - Создан класс AgentOptions (ProjectPath, MaxRetries, RequireConfirmation, AutoCommit, WatchDocumentation).
-  - Все три инструмента (ReadFileTool, WriteFileTool, ProjectStructureTool) инжектят IOptions<AgentOptions> и инициализируют _projectRoot.
+  - Все три базовых инструмента (ReadFileTool, WriteFileTool, ProjectStructureTool) инжектят IOptions<AgentOptions> и инициализируют _projectRoot.
   - Предупреждения CS0649 устранены.
 - Создан консольный интерфейс для ручного тестирования промптов:
   - PromptTesterService — отдельный сервис для прямого общения с LLM в обход агентов.
@@ -84,7 +95,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
   - AgentWorkerService переработан: при старте выбор режима A (Агент) или T (Тестирование промптов).
   - В тестовом режиме: выбор роли (Orchestrator/CodeEditor/Documentation), просмотр системного промпта, отправка запросов, просмотр сырых ответов, извлечение кода, статистика.
 - Интегрирована LLM в OrchestratorAgent.ProcessRequestAsync:
-  - Полный цикл оркестрации: Запрос → LLM → Парсинг JSON → Вызов инструмента → Результат → LLM → ... → Report.
+  - Полный цикл оркестрации: Запрос -> LLM -> Парсинг JSON -> Вызов инструмента -> Результат -> LLM -> ... -> Report.
   - conversationHistory (StringBuilder) накапливает историю диалога.
   - ExtractActionPlanRobust — извлечение JSON из ответа с поддержкой Markdown-блоков.
   - ExecuteToolFromPlan — вызов инструментов через ToolRegistry с поддержкой Dictionary<string, object> и JsonElement.
@@ -92,27 +103,96 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
   - Защита от бесконечного цикла: максимум 10 итераций.
   - Поддержка полей message/summary/report в ответах модели.
 - Доработаны системные промпты на основе реального тестирования:
-  - orchestrator.txt: добавлены примеры для project_structure, read_file, write_file; правило «Do NOT wrap JSON in triple-backtick blocks»; уточнение про язык ответа; явный path:"." для project_structure.
-  - code-editor.txt: добавлены конкретные C# 12 практики (primary constructors, collection expressions, pattern matching); правило «NO TODO»; пример с email validation и XML-документацией.
-  - documentation.txt: добавлена структура документации; пример документирования метода; правило «Never invent parameters/exceptions — mark unknown as [Неизвестно]»; инструкция запрашивать код через read_file в production-режиме.
+  - orchestrator.txt: добавлены примеры для project_structure, read_file, write_file; правило "Do NOT wrap JSON in triple-backtick blocks"; уточнение про язык ответа; явный path:"." для project_structure.
+  - code-editor.txt: добавлены конкретные C# 12 практики (primary constructors, collection expressions, pattern matching); правило "NO TODO"; пример с email validation и XML-документацией.
+  - documentation.txt: добавлена структура документации; пример документирования метода; правило "Never invent parameters/exceptions — mark unknown as [Неизвестно]"; инструкция запрашивать код через read_file в production-режиме.
 - Результаты тестирования промптов:
   - Orchestrator: стабильно возвращает чистый JSON с правильными tool и args (10/10).
   - Code Editor: генерирует код в Markdown-блоках с XML-документацией и современным C# (9.5/10).
   - Documentation: честно отказывается документировать без доступа к коду, не выдумывает детали (10/10 после доработки).
 
-ЧТО БУДЕТ СДЕЛАНО (ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ)
-Цель: Создать систему автоматического чтения, индексации и обновления документации проекта.
+ЧТО СДЕЛАНО (ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ)
+- Реализован DocumentationService в Core:
+  - DiscoverDocumentsAsync — поиск .md/.txt/.rst/.adoc файлов в проекте с исключением служебных директорий.
+  - ChunkDocument — разбиение текста на чанки по секциям ## с fallback на разбиение по размеру (max 2000 символов).
+  - EmbedChunksAsync — векторизация чанков через Ollama /api/embeddings.
+  - IndexDocumentationAsync — полный цикл индексации (поиск -> чанки -> векторизация).
+- Реализован IOllamaEmbeddingClient и OllamaEmbeddingClient для вызова /api/embeddings:
+  - GetEmbeddingAsync — получение одного вектора.
+  - GetEmbeddingsAsync — пакетная векторизация нескольких текстов.
+  - Прямые HTTP-вызовы к Ollama API, аналогично OllamaApiClientWrapper.
+- Создан QdrantOptions для конфигурации Qdrant (Endpoint, VectorSize: 3584, CollectionName: "project_docs").
+- Реализован IQdrantService и QdrantService для работы с Qdrant REST API:
+  - EnsureCollectionExistsAsync — создание коллекции с размерностью вектора и Cosine distance.
+  - UpsertPointsAsync — вставка/обновление точек с векторами и payload.
+  - SearchAsync — семантический поиск по коллекции с возвратом score и payload.
+  - ClearCollectionAsync — удаление всех точек из коллекции.
+- Реализован DocumentationIndexerService (IHostedService):
+  - При старте приложения проверяет Agent:ProjectPath.
+  - Создаёт коллекцию в Qdrant (если не существует).
+  - Запускает полную индексацию документации через DocumentationService.IndexDocumentationAsync.
+  - Сохраняет чанки с векторами в Qdrant через UpsertPointsAsync.
+  - Выводит статистику в лог.
+- Реализован ReadDocumentationTool:
+  - Принимает query (поисковый запрос) и top_k (количество результатов, 1-10).
+  - Векторизует запрос через IOllamaEmbeddingClient.
+  - Выполняет семантический поиск в Qdrant через IQdrantService.SearchAsync.
+  - Возвращает отформатированные результаты с путями к файлам, секциями, контентом и релевантностью (звёзды).
+  - Инструмент регистрируется автоматически через [AgentTool].
+- Реализован UpdateDocumentationTool:
+  - Принимает file_path, section (опционально) и content.
+  - Если секция существует (## Section) — заменяет её содержимое.
+  - Если секции нет — добавляет новую в конец файла.
+  - Если файл не существует — создаёт его с родительскими директориями.
+  - После записи автоматически реиндексирует файл: разбиение на чанки -> векторизация -> сохранение в Qdrant.
+  - Старые точки перезаписываются новыми через UpsertPoints.
+  - Инструмент регистрируется автоматически через [AgentTool].
+- Реализован DocumentationWatcherService (IHostedService):
+  - Использует FileSystemWatcher на ProjectPath с IncludeSubdirectories.
+  - Отслеживает события Changed, Created, Deleted, Renamed для .md и .txt файлов.
+  - Реализован дебаунс (3 секунды) для предотвращения множественной индексации при сохранении.
+  - При изменении/создании: удаление старых чанков + переиндексация + сохранение в Qdrant.
+  - При удалении: удаление связанных чанков из Qdrant.
+  - При переименовании: удаление старого + индексация нового.
+  - Отключается флагом Agent:WatchDocumentation = false.
+- Реализован ContextAgent и ProjectContext:
+  - ProjectContext — модель состояния проекта: ProjectPath, CurrentPhase (WorkPhase), история взаимодействий, кеш структуры, список изменённых файлов, счётчик ошибок.
+  - ContextAgent — агент управления контекстом: SetProjectPath, CacheProjectStructure, RegisterFileModification, RegisterError, RecordInteraction, SetPhase, GetContextSummary.
+  - GetContextSummary формирует сводку контекста для включения в системный промпт оркестратора.
+  - История взаимодействий ограничена 20 записями.
+- Интегрирован ContextAgent в OrchestratorAgent:
+  - Инжектирован в конструктор.
+  - При старте обработки запроса: SetPhase(Planning) + добавление contextSummary в системный промпт.
+  - При вызовах инструментов write_file/update_documentation: регистрация изменённых файлов.
+  - При ошибках: RegisterError().
+  - При успешном report: RecordInteraction() + SetPhase(Reporting).
+  - При достижении лимита итераций: запись в историю с пометкой неуспеха.
+- Исправлен дублирующийся класс ContextAgent в DocumentationAgent.cs.
+- Исправлен порядок и нумерация секций в Program.cs (сквозная нумерация 1-10).
+
+Ключевые решения Этапа 4:
+- Документация индексируется при старте агента и при обнаружении изменений в реальном времени.
+- Чанки документации сохраняются с метаданными (file_path, section, chunk_index, last_modified).
+- Для поиска используется семантический подход через Ollama embeddings + Qdrant.
+- Размерность вектора 3584 соответствует embedding_length модели qwen2.5-coder.
+- FileSystemWatcher с дебаунсом предотвращает избыточную реиндексацию при активном редактировании.
+- ContextAgent хранит состояние проекта в памяти (ProjectContext) и предоставляет сводку для оркестратора.
+- Все новые инструменты регистрируются автоматически через [AgentTool] и AddAgentTools.
+
+ЧТО БУДЕТ СДЕЛАНО (ЭТАП 5: РАЗРАБОТКА ОРКЕСТРАЦИИ)
+Цель: Реализовать центральный цикл работы агента, связывающий все компоненты воедино.
 Подзадачи:
-1. Не выполнено: Реализовать DocumentationService в Core
-2. Не выполнено: Индексация документации при старте агента (поиск .md, .txt, разбиение на чанки, векторизация через Ollama embeddings, сохранение в Qdrant с размерностью 3584)
-3. Не выполнено: Реализовать ReadDocumentationTool (семантический поиск по документации)
-4. Не выполнено: Реализовать UpdateDocumentationTool (добавление/обновление секций, реиндексация)
-5. Не выполнено: Отслеживание изменений в документации через FileSystemWatcher
-6. Не выполнено: Контекстная память проекта (история взаимодействий, текущая фаза, связь изменений с документацией)
+1. Не выполнено: Реализовать основной цикл в OrchestratorAgent: Запрос -> Загрузка контекста -> Планирование -> Исполнение -> Валидация -> Документирование -> Отчёт
+2. Не выполнено: Реализовать ProjectContext (путь к проекту, структура файлов, последние изменения, индекс документации)
+3. Не выполнено: Создать ChangePlan (список файлов для изменения, описание изменений, порядок выполнения)
+4. Не выполнено: Реализовать цепочку вызовов агентов через ToolRegistry
+5. Не выполнено: Добавить валидацию после изменений (dotnet build, тесты, откат при ошибке)
+6. Не выполнено: Реализовать систему отчётов пользователю
 Ключевые решения:
-- Индексация запускается при старте и при обнаружении изменений в docs/
-- Чанки документации сохраняются с метаданными (файл, секция, дата)
-- Для поиска используется гибридный подход: семантический + ключевые слова
+- Оркестратор не редактирует код сам, только делегирует
+- Каждое изменение проходит через dotnet build — это обязательный gate
+- При провале сборки агент пытается исправить ошибки (до N попыток)
+- Все изменения логируются с возможностью отката
 
 ПОЛНЫЙ ПЛАН ПРОЕКТА (8 ЭТАПОВ)
 
@@ -128,7 +208,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 7. Выполнено: Базовая регистрация OllamaApiClient в DI
 Ключевые решения:
 - В качестве LLM выбрана qwen2.5-coder:7b-instruct
-- Для взаимодействия с Ollama используется прямой API через OllamaSharp (метод GenerateAsync)
+- Для взаимодействия с Ollama используется прямой API через HTTP-вызовы /api/generate и /api/embeddings
 - Semantic Kernel будет использоваться только для Memory (Этап 4)
 - Размерность вектора для Qdrant: 3584
 
@@ -154,7 +234,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 Подзадачи:
 1. Выполнено: Реализовать ILlmService с реальной логикой вызова Ollama через прямые HTTP-вызовы /api/generate
 2. Выполнено: Реализовать управление контекстным окном (история диалога через conversationHistory)
-3. Выполнено: Разработать шаблоны системных промптов для каждого агента (редактирование кода, анализ документации, оркестратор)
+3. Выполнено: Разработать шаблоны системных промптов для каждого агента
 4. Выполнено: Реализовать парсинг ответов модели (извлечение кода из Markdown-блоков, извлечение JSON-планов)
 5. Выполнено: Настроить параметры генерации (temperature: 0.2, top_p: 0.9, max_tokens: 4096) через OllamaOptions
 6. Выполнено: Добавить обработку ошибок и ретраи при сбоях Ollama (Polly, 3 попытки, экспоненциальная задержка)
@@ -165,22 +245,25 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 - Для генерации кода используется низкая temperature (0.2) для предсказуемости
 - Ответы модели парсятся: код извлекается из блоков ```csharp ... ```, JSON — из текста и Markdown-блоков
 - Добавлен Polly ResiliencePipeline с ретраями и таймаутами
-- OrchestratorAgent реализует цикл «LLM → JSON → Инструмент → Результат → LLM» с защитой от зацикливания
+- OrchestratorAgent реализует цикл "LLM -> JSON -> Инструмент -> Результат -> LLM" с защитой от зацикливания
 - Промпты протестированы вручную через тестовый режим и показывают стабильные результаты
 
-ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ
+ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ — ЗАВЕРШЁН
 Цель: Создать систему автоматического чтения, индексации и обновления документации проекта.
 Подзадачи:
-1. Не выполнено: Реализовать DocumentationService в Core
-2. Не выполнено: Индексация документации при старте агента (поиск .md, .txt, разбиение на чанки, векторизация через Ollama embeddings, сохранение в Qdrant с размерностью 3584)
-3. Не выполнено: Реализовать ReadDocumentationTool (семантический поиск по документации)
-4. Не выполнено: Реализовать UpdateDocumentationTool (добавление/обновление секций, реиндексация)
-5. Не выполнено: Отслеживание изменений в документации через FileSystemWatcher
-6. Не выполнено: Контекстная память проекта (история взаимодействий, текущая фаза, связь изменений с документацией)
+1. Выполнено: Реализовать DocumentationService в Core (поиск .md/.txt файлов, разбиение на чанки, векторизация через Ollama embeddings)
+2. Выполнено: Индексация документации при старте агента (DocumentationIndexerService, создание коллекции в Qdrant, вставка точек)
+3. Выполнено: Реализовать ReadDocumentationTool (семантический поиск по индексированной документации)
+4. Выполнено: Реализовать UpdateDocumentationTool (добавление/обновление секций с автоматической реиндексацией)
+5. Выполнено: Отслеживание изменений в документации через DocumentationWatcherService (FileSystemWatcher с дебаунсом)
+6. Выполнено: Контекстная память проекта (ContextAgent, ProjectContext, история взаимодействий, фазы работы)
 Ключевые решения:
-- Индексация запускается при старте и при обнаружении изменений в docs/
-- Чанки документации сохраняются с метаданными (файл, секция, дата)
-- Для поиска используется гибридный подход: семантический + ключевые слова
+- Индексация запускается при старте и при обнаружении изменений в реальном времени
+- Чанки документации сохраняются с метаданными (file_path, section, chunk_index, last_modified)
+- Для поиска используется семантический подход через Ollama embeddings + Qdrant (Cosine distance)
+- Размерность вектора 3584 соответствует embedding_length модели qwen2.5-coder
+- FileSystemWatcher с дебаунсом (3 секунды) предотвращает избыточную реиндексацию
+- ContextAgent хранит состояние проекта в памяти и предоставляет сводку для оркестратора
 
 ЭТАП 5: РАЗРАБОТКА ОРКЕСТРАЦИИ
 Цель: Реализовать центральный цикл работы агента, связывающий все компоненты воедино.
@@ -238,11 +321,11 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 - GitHub Actions для автоматизации
 - README.md на русском и английском
 
-СТЕК И ЗАВИСИМОСТИ (ФИНАЛЬНАЯ ВЕРСИЯ ЭТАПА 3)
+СТЕК И ЗАВИСИМОСТИ (ФИНАЛЬНАЯ ВЕРСИЯ ЭТАПА 4)
 
 ИНФРАСТРУКТУРА
-- Локальная LLM: Ollama (qwen2.5-coder:7b-instruct) — генерация кода и ответов агентом
-- Векторная БД: Qdrant (в Docker) — хранение документации и контекста проекта для семантического поиска
+- Локальная LLM: Ollama (qwen2.5-coder:7b-instruct) — генерация кода, ответов и эмбеддингов
+- Векторная БД: Qdrant (в Docker) — хранение и семантический поиск по документации (коллекция project_docs, размерность 3584, Cosine distance)
 - Контейнеризация: Docker Compose — управление Ollama и Qdrant локально
 
 .NET СТЕК
@@ -272,39 +355,53 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 - xUnit + Moq — Этап 7 — Тестирование
 - Prometheus.Client — Этап 7 — Метрики (опционально)
 
-СТРУКТУРА РЕШЕНИЯ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 3)
+СТРУКТУРА РЕШЕНИЯ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 4)
 AIAgentPlatform/
 ├── AIAgentPlatform.sln
 ├── local-infra/
 │   └── docker-compose.yml          # Ollama + Qdrant
-├── ProjectAIAgent.Host/            # Точка входа, DI, конфигурация, оркестрация
-│   ├── Program.cs                  # Регистрация агентов, инструментов, WorkerService
+├── ProjectAIAgent.Host/            # Точка входа, DI, конфигурация, оркестрация, фоновые службы
+│   ├── Program.cs                  # Регистрация агентов, инструментов, сервисов (секции 1-10)
 │   ├── AgentWorkerService.cs       # Фоновая служба с выбором режима (A — агент, T — тестирование)
 │   ├── OllamaApiClientWrapper.cs   # Реализация IOllamaApiClient через прямые HTTP-вызовы /api/generate
+│   ├── OllamaEmbeddingClient.cs    # Реализация IOllamaEmbeddingClient через прямые HTTP-вызовы /api/embeddings
+│   ├── QdrantService.cs           # Реализация IQdrantService через прямые HTTP-вызовы к Qdrant REST API
+│   ├── DocumentationIndexerService.cs  # Индексация документации при старте (IHostedService)
+│   ├── DocumentationWatcherService.cs  # Отслеживание изменений в .md/.txt файлах (IHostedService)
 │   ├── PromptTesterService.cs      # Сервис для ручного тестирования промптов
-│   ├── appsettings.json            # Конфигурация Ollama (с параметрами генерации и ретраев), Qdrant, Agent
+│   ├── appsettings.json            # Конфигурация Ollama, Qdrant, Agent, Logging
 │   └── ProjectAIAgent.Host.csproj
-├── ProjectAIAgent.Core/            # Бизнес-логика, агенты, инструменты
+├── ProjectAIAgent.Core/            # Бизнес-логика, агенты, инструменты, сервисы
 │   ├── Agents/
 │   │   ├── BaseAgent.cs            # Базовый класс агента с загрузкой промптов и GetTool
-│   │   ├── OrchestratorAgent.cs    # Оркестратор с циклом «LLM → JSON → Инструмент → Результат»
+│   │   ├── OrchestratorAgent.cs    # Оркестратор с циклом "LLM -> JSON -> Инструмент -> Результат" + ContextAgent
 │   │   ├── CodeEditorAgent.cs      # Редактор кода с ReadFileAsync и WriteFileAsync
-│   │   ├── DocumentationAgent.cs   # Заглушка агента документации
-│   │   └── ContextAgent.cs         # Заглушка агента контекста
+│   │   ├── DocumentationAgent.cs   # Агент документации
+│   │   └── ContextAgent.cs         # Агент контекста (ProjectContext, история, фазы)
 │   ├── Tools/
 │   │   ├── IAgentTool.cs           # Интерфейс, ToolResult, AgentToolAttribute
-│   │   ├── ToolRegistry.cs         # Реестр инструментов с авторегистрацией
+│   │   ├── ToolRegistry.cs         # Реестр инструментов с авторегистрацией и GetToolsDescription
 │   │   ├── ReadFileTool.cs         # Чтение файлов (инжектирован AgentOptions)
 │   │   ├── WriteFileTool.cs        # Запись файлов с созданием директорий (инжектирован AgentOptions)
-│   │   └── ProjectStructureTool.cs # Сканирование структуры проекта (инжектирован AgentOptions)
+│   │   ├── ProjectStructureTool.cs # Сканирование структуры проекта (инжектирован AgentOptions)
+│   │   ├── ReadDocumentationTool.cs    # Семантический поиск по документации через Qdrant
+│   │   └── UpdateDocumentationTool.cs  # Обновление/создание документации с реиндексацией
 │   ├── Services/
 │   │   ├── ILlmService.cs          # Интерфейс LLM-сервиса
 │   │   ├── LlmService.cs           # Реализация LLM-сервиса с Polly-пайплайном
-│   │   ├── LlmResponseParser.cs    # Парсинг ответов LLM (код из Markdown, JSON-планы)
-│   │   ├── IOllamaApiClient.cs     # Интерфейс клиента Ollama
-│   │   ├── OllamaOptions.cs        # Конфигурация Ollama (полная)
-│   │   ├── AgentOptions.cs         # Конфигурация агента (ProjectPath, MaxRetries, RequireConfirmation)
+│   │   ├── LlmResponseParser.cs    # Парсинг ответов LLM (код из Markdown, JSON-планы, ConvertJsonElement)
+│   │   ├── IOllamaApiClient.cs     # Интерфейс клиента Ollama для генерации
+│   │   ├── IOllamaEmbeddingClient.cs   # Интерфейс клиента Ollama для эмбеддингов
+│   │   ├── OllamaOptions.cs        # Конфигурация Ollama (полная: параметры генерации, ретраи)
+│   │   ├── AgentOptions.cs         # Конфигурация агента (ProjectPath, MaxRetries, RequireConfirmation, WatchDocumentation)
+│   │   ├── QdrantOptions.cs        # Конфигурация Qdrant (Endpoint, VectorSize, CollectionName)
+│   │   ├── IDocumentationService.cs    # Интерфейс сервиса документации
+│   │   ├── DocumentationService.cs     # Поиск .md/.txt, разбиение на чанки, векторизация
+│   │   ├── IQdrantService.cs       # Интерфейс сервиса Qdrant
 │   │   └── PromptLoader.cs         # Загрузка и кеширование промптов из файлов
+│   ├── Models/
+│   │   ├── DocumentChunk.cs        # Чанк документации с метаданными и вектором
+│   │   └── ProjectContext.cs       # Контекст проекта (состояние, история, фазы)
 │   ├── Prompts/
 │   │   ├── orchestrator.txt        # Системный промпт оркестратора (улучшен)
 │   │   ├── code-editor.txt         # Системный промпт редактора кода (улучшен)
@@ -328,6 +425,10 @@ AIAgentPlatform/
 │   │   ├── Program.cs
 │   │   ├── AgentWorkerService.cs
 │   │   ├── OllamaApiClientWrapper.cs
+│   │   ├── OllamaEmbeddingClient.cs
+│   │   ├── QdrantService.cs
+│   │   ├── DocumentationIndexerService.cs
+│   │   ├── DocumentationWatcherService.cs
 │   │   ├── PromptTesterService.cs
 │   │   ├── appsettings.json
 │   │   ├── Controllers/           # Web API (Этап 6)
@@ -346,23 +447,27 @@ AIAgentPlatform/
 │   │   │   ├── ReadFileTool.cs
 │   │   │   ├── WriteFileTool.cs
 │   │   │   ├── ProjectStructureTool.cs
+│   │   │   ├── ReadDocumentationTool.cs
+│   │   │   ├── UpdateDocumentationTool.cs
 │   │   │   ├── SearchCodebaseTool.cs
 │   │   │   ├── RunShellCommandTool.cs
-│   │   │   ├── GitDiffTool.cs
-│   │   │   ├── ReadDocumentationTool.cs
-│   │   │   └── UpdateDocumentationTool.cs
+│   │   │   └── GitDiffTool.cs
 │   │   ├── Services/
 │   │   │   ├── ILlmService.cs
 │   │   │   ├── LlmService.cs
 │   │   │   ├── LlmResponseParser.cs
 │   │   │   ├── IOllamaApiClient.cs
+│   │   │   ├── IOllamaEmbeddingClient.cs
 │   │   │   ├── OllamaOptions.cs
 │   │   │   ├── AgentOptions.cs
-│   │   │   ├── PromptLoader.cs
+│   │   │   ├── QdrantOptions.cs
 │   │   │   ├── IDocumentationService.cs
 │   │   │   ├── DocumentationService.cs
+│   │   │   ├── IQdrantService.cs
+│   │   │   ├── PromptLoader.cs
 │   │   │   └── IAgentService.cs
 │   │   ├── Models/
+│   │   │   ├── DocumentChunk.cs
 │   │   │   ├── ProjectContext.cs
 │   │   │   ├── ChangePlan.cs
 │   │   │   ├── AgentRequest.cs
@@ -395,7 +500,9 @@ appsettings.json (Host):
     "TotalTimeoutSeconds": 300
   },
   "Qdrant": {
-    "Endpoint": "http://localhost:6333"
+    "Endpoint": "http://localhost:6333",
+    "VectorSize": 3584,
+    "CollectionName": "project_docs"
   },
   "Agent": {
     "ProjectPath": "",
@@ -453,7 +560,7 @@ docker-compose.yml (local-infra):
 ПРИНЯТЫЕ АРХИТЕКТУРНЫЕ РЕШЕНИЯ
 
 1. Разделение на Host и Core
-   - Host отвечает за инфраструктуру (DI, конфигурация, хостинг, оркестрация).
+   - Host отвечает за инфраструктуру (DI, конфигурация, хостинг, оркестрация, HTTP-клиенты).
    - Core содержит всю бизнес-логику (агенты, инструменты, модели, сервисы).
    - Это обеспечивает тестируемость и возможность смены способа развёртывания.
 
@@ -461,10 +568,11 @@ docker-compose.yml (local-infra):
    - Выбор сделан для полной локальности и независимости.
    - Модель qwen2.5-coder:7b-instruct выбрана как основная (уже загружена в локальном Ollama, показала отличные результаты в тестах).
    - Важно: модель можно заменить на любую другую через appsettings.json.
+   - Используются два эндпоинта: /api/generate для генерации текста и /api/embeddings для векторизации.
 
 3. Прямой доступ к Ollama API через HTTP
    - OllamaSharp используется только для моделей (GenerateRequest, RequestOptions).
-   - Фактические вызовы выполняются через прямой HTTP POST на /api/generate в OllamaApiClientWrapper.
+   - Фактические вызовы выполняются через прямой HTTP POST в OllamaApiClientWrapper и OllamaEmbeddingClient.
    - Причина: коннектор OllamaSharp в версии 5.x формирует URL, несовместимый с нашим эндпоинтом, что вызывало ошибку 404.
    - Прямые HTTP-вызовы гарантируют совместимость и повторяют успешный проверочный код Этапа 1.
 
@@ -474,12 +582,14 @@ docker-compose.yml (local-infra):
 
 5. Собственная оркестрация вместо Microsoft.Agents.Hosting
    - Пакет Microsoft.Agents.Hosting не существует в NuGet.
-   - Вместо него реализован AgentWorkerService (BackgroundService), который запускает интерактивный цикл обработки запросов через OrchestratorAgent.
+   - Вместо него реализован AgentWorkerService (BackgroundService) с интерактивным циклом обработки запросов.
    - Решение даёт полный контроль над оркестрацией и не зависит от нестабильных/несуществующих внешних фреймворков.
 
 6. Qdrant как постоянное векторное хранилище
    - Выбрано вместо In-Memory Store для сохранения индекса документации между перезапусками.
    - Размерность вектора: 3584 (соответствует embedding_length модели qwen2.5-coder).
+   - Метрика расстояния: Cosine.
+   - Коллекция: project_docs.
 
 7. Git как система контроля версий изменений агента
    - Все изменения агента идут через Git (через LibGit2Sharp).
@@ -496,7 +606,7 @@ docker-compose.yml (local-infra):
 10. Tool-based архитектура с авторегистрацией
     - Инструменты реализуют IAgentTool и регистрируются автоматически через рефлексию.
     - ToolRegistry предоставляет единую точку доступа ко всем инструментам.
-    - Агенты получают инструменты через GetTool<T>() из DI-контейнера.
+    - На Этапе 4 добавлены ReadDocumentationTool и UpdateDocumentationTool — регистрируются автоматически.
 
 11. Prompt-driven поведение агентов
     - Системные промпты хранятся в отдельных .txt файлах.
@@ -514,77 +624,96 @@ docker-compose.yml (local-infra):
     - Режим T (Тестирование): прямое общение с LLM через PromptTesterService для отладки промптов.
     - Выбор режима при старте приложения.
 
-АРХИТЕКТУРА АГЕНТОВ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 3)
+14. Автоматическая индексация документации
+    - При старте: DocumentationIndexerService сканирует ProjectPath, разбивает .md/.txt на чанки, векторизует и сохраняет в Qdrant.
+    - В реальном времени: DocumentationWatcherService отслеживает изменения через FileSystemWatcher с дебаунсом 3 секунды.
+    - При изменении файла: удаление старых чанков + переиндексация + сохранение новых.
+
+15. Контекстная память проекта
+    - ContextAgent хранит ProjectContext: путь к проекту, фазу работы, историю взаимодействий, изменённые файлы, счётчик ошибок.
+    - OrchestratorAgent получает сводку контекста и добавляет её в системный промпт.
+    - История взаимодействий ограничена 20 записями.
+
+АРХИТЕКТУРА АГЕНТОВ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 4)
 
 Агенты в пространстве имён ProjectAIAgent.Core.Agents:
-- OrchestratorAgent — принимает запросы пользователя, формирует план, вызывает инструменты через ToolRegistry, возвращает отчёт. Реализован цикл: Запрос → LLM → Парсинг JSON → Инструмент → Результат → LLM → ... → Report. Защита от зацикливания (MaxIterations = 10).
-- CodeEditorAgent — специализируется на чтении/изменении файлов проекта. Инструменты: ReadFile, WriteFile, SearchCodebase (будущий).
-- DocumentationAgent — читает, анализирует и обновляет документацию (заглушка, Этап 4). Инструменты: ReadDocs, UpdateDocs, ProjectStructure (будущие).
-- ContextAgent — управляет памятью, формирует понимание общей картины проекта (заглушка, Этап 4). Инструменты: SearchCodebase, ReadDocs (будущие).
+- OrchestratorAgent — главный оркестратор. Принимает запросы, получает контекст от ContextAgent, формирует системный промпт, вызывает LLM, парсит JSON-ответы, вызывает инструменты через ToolRegistry, возвращает отчёт. Защита от зацикливания (MaxIterations = 10).
+- CodeEditorAgent — специализируется на чтении/изменении файлов проекта. Инструменты: ReadFileTool, WriteFileTool, ProjectStructureTool.
+- DocumentationAgent — агент для работы с документацией. Инструменты: ReadDocumentationTool, UpdateDocumentationTool, ProjectStructureTool.
+- ContextAgent — агент управления контекстом. Хранит ProjectContext (состояние, историю взаимодействий, фазы работы). Предоставляет GetContextSummary() для включения в промпт оркестратора.
 
 Инструменты агентов (Tools) в ProjectAIAgent.Core.Tools:
 - ReadFileTool — чтение содержимого файла. Зависимости: FileSystem, IOptions<AgentOptions>. Статус: реализован, протестирован.
 - WriteFileTool — запись содержимого в файл. Зависимости: FileSystem, IOptions<AgentOptions>. Статус: реализован, протестирован.
 - ProjectStructureTool — анализ структуры решения. Зависимости: FileSystem, IOptions<AgentOptions>. Статус: реализован.
-- SearchCodebaseTool — семантический поиск по коду. Зависимость: Memory Store. Статус: не реализован (Этап 4).
+- ReadDocumentationTool — семантический поиск по документации. Зависимости: IOllamaEmbeddingClient, IQdrantService, IOptions<QdrantOptions>. Статус: реализован.
+- UpdateDocumentationTool — обновление/создание документации с реиндексацией. Зависимости: IDocumentationService, IOllamaEmbeddingClient, IQdrantService, IOptions<AgentOptions>, IOptions<QdrantOptions>. Статус: реализован.
+- SearchCodebaseTool — семантический поиск по коду. Зависимость: Memory Store. Статус: не реализован (Этап 5).
 - RunShellCommandTool — выполнение консольных команд. Зависимость: CliWrap. Статус: не реализован (Этап 5).
 - GitDiffTool — просмотр изменений Git. Зависимость: LibGit2Sharp. Статус: не реализован (Этап 5).
-- ReadDocumentationTool — чтение документации проекта. Зависимость: Memory Store. Статус: не реализован (Этап 4).
-- UpdateDocumentationTool — обновление документации. Зависимости: Memory Store, FileSystem. Статус: не реализован (Этап 4).
 
 Сервисы в ProjectAIAgent.Core.Services и ProjectAIAgent.Host:
 - ILlmService / LlmService — генерация ответов через Ollama с Polly-ретраями. Статус: реализован.
-- LlmResponseParser — парсинг ответов LLM (код из Markdown, JSON-планы). Статус: реализован.
-- IOllamaApiClient / OllamaApiClientWrapper — HTTP-клиент для Ollama API. Статус: реализован.
-- OllamaOptions — конфигурация Ollama (BaseUrl, Model, параметры генерации, ретраи). Статус: реализован.
-- AgentOptions — конфигурация агента (ProjectPath, MaxRetries, RequireConfirmation). Статус: реализован.
+- IOllamaApiClient / OllamaApiClientWrapper — HTTP-клиент для /api/generate. Статус: реализован.
+- IOllamaEmbeddingClient / OllamaEmbeddingClient — HTTP-клиент для /api/embeddings. Статус: реализован.
+- LlmResponseParser — парсинг ответов LLM (код из Markdown, JSON-планы, ConvertJsonElement). Статус: реализован.
+- IDocumentationService / DocumentationService — поиск .md/.txt, разбиение на чанки, векторизация. Статус: реализован.
+- IQdrantService / QdrantService — создание коллекций, вставка/поиск/удаление точек в Qdrant. Статус: реализован.
+- DocumentationIndexerService — индексация документации при старте (IHostedService). Статус: реализован.
+- DocumentationWatcherService — отслеживание изменений в реальном времени (IHostedService). Статус: реализован.
 - PromptLoader — загрузка и кеширование системных промптов. Статус: реализован.
 - PromptTesterService — интерактивное тестирование промптов. Статус: реализован.
+- OllamaOptions — конфигурация Ollama. Статус: реализован.
+- AgentOptions — конфигурация агента. Статус: реализован.
+- QdrantOptions — конфигурация Qdrant. Статус: реализован.
 
 ТИПИЧНЫЙ WORKFLOW АГЕНТА (ЦЕЛЕВОЙ)
 
 1. Пользователь: "Добавь метод для валидации email в UserService"
-2. ContextAgent загружает контекст проекта (структура, документация)
-3. OrchestratorAgent формирует ChangePlan:
-   - Изменить: src/Services/UserService.cs
-   - Обновить: docs/api/UserService.md
-4. CodeEditorAgent:
+2. ContextAgent загружает контекст проекта (структура, документация, история)
+3. OrchestratorAgent формирует системный промпт с контекстом и списком инструментов
+4. OrchestratorAgent отправляет запрос в LLM, получает план действий
+5. CodeEditorAgent:
    a. Читает UserService.cs через ReadFileTool
    b. Генерирует метод ValidateEmail
    c. Записывает изменения через WriteFileTool
-5. RunShellCommandTool: dotnet build -> Успех
-6. DocumentationAgent обновляет документацию
-7. GitDiffTool показывает изменения пользователю
-8. При подтверждении — коммит в Git
-9. Пользователь получает отчёт
+6. RunShellCommandTool: dotnet build -> Успех
+7. DocumentationAgent обновляет документацию через UpdateDocumentationTool (реиндексация)
+8. GitDiffTool показывает изменения пользователю
+9. ContextAgent записывает успешное взаимодействие в историю
+10. Пользователь получает отчёт
 
 АЛЬТЕРНАТИВНЫЙ СЦЕНАРИЙ (С ОШИБКОЙ)
-5. RunShellCommandTool: dotnet build -> Ошибка
-6. Агент анализирует ошибку сборки
-7. CodeEditorAgent исправляет код (попытка 2/3)
-8. dotnet build -> Успех
-9. Продолжение основного сценария
+6. RunShellCommandTool: dotnet build -> Ошибка
+7. Агент анализирует ошибку сборки
+8. CodeEditorAgent исправляет код (попытка 2/3)
+9. dotnet build -> Успех
+10. Продолжение основного сценария
 
-ТЕКУЩИЙ WORKFLOW (ПОСЛЕ ЭТАПА 3)
+ТЕКУЩИЙ WORKFLOW (ПОСЛЕ ЭТАПА 4)
 
-1. Пользователь вводит запрос в консоль (режим A).
-2. AgentWorkerService передаёт запрос в OrchestratorAgent.ProcessRequestAsync.
-3. OrchestratorAgent формирует системный промпт с описанием инструментов ({TOOLS}).
-4. Запрос отправляется в LLM через LlmService → OllamaApiClientWrapper → HTTP POST /api/generate.
-5. LlmResponseParser.ExtractActionPlanRobust извлекает JSON-план из ответа (поддерживает чистый JSON и JSON в Markdown-блоках).
-6. Если action = "delegate" — ExecuteToolFromPlan вызывает указанный инструмент через ToolRegistry.ExecuteToolAsync.
-7. Результат инструмента добавляется в conversationHistory.
-8. Цикл повторяется (до 10 итераций), пока LLM не вернёт action = "report".
-9. Пользователь получает финальный отчёт.
+1. DocumentationIndexerService индексирует документацию при старте.
+2. DocumentationWatcherService запускает отслеживание изменений в реальном времени.
+3. Пользователь вводит запрос в консоль (режим A).
+4. AgentWorkerService передаёт запрос в OrchestratorAgent.ProcessRequestAsync.
+5. ContextAgent предоставляет сводку контекста (ProjectContext).
+6. OrchestratorAgent формирует системный промпт с описанием инструментов ({TOOLS}) и контекстом.
+7. Запрос отправляется в LLM через LlmService -> OllamaApiClientWrapper -> HTTP POST /api/generate.
+8. LlmResponseParser.ExtractActionPlanRobust извлекает JSON-план из ответа.
+9. Если action = "delegate" — ExecuteToolFromPlan вызывает указанный инструмент через ToolRegistry.ExecuteToolAsync.
+10. Результат инструмента добавляется в conversationHistory, ContextAgent регистрирует изменения/ошибки.
+11. Цикл повторяется (до 10 итераций), пока LLM не вернёт action = "report".
+12. ContextAgent записывает взаимодействие в историю.
+13. Пользователь получает финальный отчёт.
 
-БЛИЖАЙШИЕ ШАГИ (ПЛАН НА ЭТАП 4)
+БЛИЖАЙШИЕ ШАГИ (ПЛАН НА ЭТАП 5)
 
-1. Не выполнено: Реализовать DocumentationService в Core (поиск .md/.txt файлов, разбиение на чанки, векторизация через Ollama embeddings)
-2. Не выполнено: Настроить сохранение чанков в Qdrant (коллекция project_docs, размерность вектора 3584)
-3. Не выполнено: Реализовать ReadDocumentationTool (семантический поиск по индексированной документации)
-4. Не выполнено: Реализовать UpdateDocumentationTool (добавление/обновление документации с реиндексацией)
-5. Не выполнено: Настроить FileSystemWatcher для отслеживания изменений в документации
-6. Не выполнено: Реализовать ContextAgent и ProjectContext (история взаимодействий, текущая фаза, связь изменений с документацией)
+1. Не выполнено: Реализовать RunShellCommandTool (выполнение dotnet build, dotnet test через CliWrap)
+2. Не выполнено: Реализовать GitDiffTool (просмотр изменений Git через LibGit2Sharp)
+3. Не выполнено: Создать ChangePlan (модель плана изменений: список файлов, описание, порядок)
+4. Не выполнено: Доработать OrchestratorAgent для использования ChangePlan и валидации сборкой
+5. Не выполнено: Реализовать валидацию после изменений (dotnet build как gate, откат при ошибке)
+6. Не выполнено: Реализовать систему отчётов с форматированным выводом изменений
 
 ТЕКУЩИЕ ПРЕДУПРЕЖДЕНИЯ СБОРКИ
 - CS8601: Возможно, назначение-ссылка, допускающее значение NULL в OllamaApiClientWrapper.cs (строки 46, 47, 48). Косметические предупреждения, будут исправлены при финальной чистке кода.
@@ -601,11 +730,13 @@ docker-compose.yml (local-infra):
    cd ../ProjectAIAgent.Host
    dotnet run
 Ожидаемый результат:
+- При старте: индексация документации (если настроен ProjectPath).
 - Выбор режима: A (Агент) или T (Тестирование промптов).
-- В режиме A: ввод запроса → цикл оркестрации → вызов инструментов → отчёт.
-- В режиме T: выбор роли → ввод запроса → прямой ответ LLM с показом сырого ответа, извлечённого кода и статистики.
-- Зарегистрировано 3 инструмента: read_file, write_file, project_structure.
-- Рекомендуется указать "ProjectPath" в секции "Agent" в appsettings.json для корректной работы инструментов. Если путь пустой, инструменты могут падать с ошибкой "The path is empty" — в этом случае укажите путь к корню проекта или используйте "." в запросе.
+- В режиме A: ввод запроса -> цикл оркестрации с контекстом -> вызов инструментов (включая read_documentation и update_documentation) -> отчёт.
+- В режиме T: выбор роли -> ввод запроса -> прямой ответ LLM с показом сырого ответа, извлечённого кода и статистики.
+- Зарегистрировано 5 инструментов: read_file, write_file, project_structure, read_documentation, update_documentation.
+- DocumentationWatcherService отслеживает изменения в .md/.txt файлах в реальном времени.
+- Рекомендуется указать "ProjectPath" в секции "Agent" в appsettings.json для корректной работы всех инструментов и индексации.
 
 ВАЖНЫЕ ЗАМЕТКИ
 - Все пакеты Microsoft.SemanticKernel.* используют --prerelease версии. При проблемах совместимости в будущем нужно сверяться с официальной документацией.
@@ -613,10 +744,13 @@ docker-compose.yml (local-infra):
 - Qdrant настроен с вектором размерности 3584 (соответствует embedding_length модели qwen2.5-coder). При смене модели может потребоваться корректировка этого параметра.
 - Все изменения кода агента проходят через Git — это даёт возможность отката.
 - В production-режиме рекомендуется включить RequireConfirmation: true.
-- Пакет Microsoft.Agents.Hosting исключён из проекта, так как не существует в NuGet. Оркестрация выполняется собственным AgentWorkerService.
-- Агенты DocumentationAgent и ContextAgent созданы как заглушки, их функционал будет реализован на Этапе 4.
-- Инструменты ReadFileTool и WriteFileTool покрыты юнит-тестами. ProjectStructureTool пока без тестов.
+- Пакет Microsoft.Agents.Hosting исключён из проекта, так как не существует в NuGet.
+- Инструменты ReadFileTool и WriteFileTool покрыты юнит-тестами. Новые инструменты (ReadDocumentationTool, UpdateDocumentationTool) пока без тестов.
 - Для предотвращения переполнения контекстного окна результаты read_file обрезаются до 3000 символов.
 - LlmResponseParser использует конвертацию JsonElement в обычные типы C# через ConvertJsonElement для корректной работы с кириллицей и другими символами Unicode.
 - При ошибке 404 с сообщением "model not found" необходимо загрузить модель через docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct.
 - В тестовом режиме (T) можно переключать роли командой /role и просматривать системный промпт командой /system.
+- DocumentationIndexerService и DocumentationWatcherService работают только при настроенном Agent:ProjectPath.
+- DocumentationWatcherService отключается флагом Agent:WatchDocumentation = false.
+- ReadDocumentationTool ищет в коллекции Qdrant, созданной DocumentationIndexerService. Если индексация не выполнялась, инструмент вернёт пустой результат.
+- UpdateDocumentationTool после записи автоматически реиндексирует файл, обновляя точки в Qdrant.
