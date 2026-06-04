@@ -1,9 +1,11 @@
+// ProjectAIAgent.Host/Program.cs
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ProjectAIAgent.Core.Agents;
 using ProjectAIAgent.Core.Services;
 using ProjectAIAgent.Core.Tools;
 using ProjectAIAgent.Host;
+using System.CommandLine;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -25,7 +27,6 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
     var ollamaSection = builder.Configuration.GetSection("Ollama");
     var baseUrl = ollamaSection["BaseUrl"] ?? "http://localhost:11434";
     var timeoutSeconds = int.TryParse(ollamaSection["TimeoutSeconds"], out var ts) ? ts : 120;
-
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
@@ -39,6 +40,10 @@ builder.Services.AddSingleton<ILlmService, LlmService>();
 // 3.1. СЕРВИС ВАЛИДАЦИИ СБОРКИ
 // ==========================================
 builder.Services.AddSingleton<BuildValidationService>();
+
+// ==========================================
+// 3.2. СЕРВИС ОТЧЁТОВ
+// ==========================================
 builder.Services.AddSingleton<ReportService>();
 
 // ==========================================
@@ -50,7 +55,7 @@ builder.Services.AddHttpClient<IOllamaEmbeddingClient, OllamaEmbeddingClient>(cl
     var ollamaSection = builder.Configuration.GetSection("Ollama");
     var baseUrl = ollamaSection["BaseUrl"] ?? "http://localhost:11434";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(60); // Эмбеддинги могут выполняться дольше
+    client.Timeout = TimeSpan.FromSeconds(60);
 });
 
 // ==========================================
@@ -65,10 +70,11 @@ builder.Services.AddHttpClient<IQdrantService, QdrantService>(client =>
 });
 
 // ==========================================
-// 6. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ
+// 6. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ И CLI
 // ==========================================
 builder.Services.AddSingleton<PromptLoader>();
 builder.Services.AddSingleton<PromptTesterService>();
+builder.Services.AddSingleton<CliService>();
 
 // ==========================================
 // 7. ИНСТРУМЕНТЫ (автоматическая регистрация)
@@ -78,7 +84,7 @@ builder.Services.AddAgentTools(typeof(BaseAgent).Assembly);
 // ==========================================
 // 8. АГЕНТЫ
 // ==========================================
-builder.Services.AddSingleton<ContextAgent>();          // Первым — от него зависит OrchestratorAgent
+builder.Services.AddSingleton<ContextAgent>();
 builder.Services.AddSingleton<OrchestratorAgent>();
 builder.Services.AddSingleton<CodeEditorAgent>();
 builder.Services.AddSingleton<DocumentationAgent>();
@@ -86,15 +92,26 @@ builder.Services.AddSingleton<DocumentationAgent>();
 // ==========================================
 // 9. ФОНОВЫЕ СЛУЖБЫ
 // ==========================================
-// Индексация документации при старте
 builder.Services.AddHostedService<DocumentationIndexerService>();
-// Отслеживание изменений в реальном времени
 builder.Services.AddHostedService<DocumentationWatcherService>();
-// Интерактивный цикл (режим Агента / Тестирования)
 builder.Services.AddHostedService<AgentWorkerService>();
 
 // ==========================================
 // 10. ЗАПУСК
 // ==========================================
 var host = builder.Build();
-await host.RunAsync();
+
+// Проверяем, есть ли аргументы командной строки
+var cliArgs = args.Where(a => !a.StartsWith("--")).ToList();
+if (cliArgs.Count > 0)
+{
+    // Режим CLI — выполняем команду и выходим
+    var cliService = host.Services.GetRequiredService<CliService>();
+    var rootCommand = cliService.CreateRootCommand();
+    await rootCommand.InvokeAsync(args);
+}
+else
+{
+    // Интерактивный режим
+    await host.RunAsync();
+}
