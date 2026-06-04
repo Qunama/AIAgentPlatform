@@ -34,6 +34,20 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
 builder.Services.AddSingleton<ILlmService, LlmService>();
 
 // ==========================================
+// 3.5. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
+// ==========================================
+builder.Services.Configure<QdrantOptions>(
+    builder.Configuration.GetSection("Qdrant"));
+builder.Services.AddSingleton<IDocumentationService, DocumentationService>();
+builder.Services.AddHttpClient<IOllamaEmbeddingClient, OllamaEmbeddingClient>(client =>
+{
+    var ollamaSection = builder.Configuration.GetSection("Ollama");
+    var baseUrl = ollamaSection["BaseUrl"] ?? "http://localhost:11434";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60); // Эмбеддинги могут выполняться дольше
+});
+
+// ==========================================
 // 3.5. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ
 // ==========================================
 builder.Services.AddSingleton<PromptLoader>();
