@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ProjectAIAgent.Core/ProjectAIAgent.Core.csproj" />
+  <Project Path="ProjectAIAgent.Host/ProjectAIAgent.Host.csproj" />
+</Solution>

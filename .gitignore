@@ -1,0 +1,32 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+TestResults/
+*.VisualState.xml
+
+# NuGet
+packages/
+*.nupkg
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes / data
+local-infra/data/
+
+# Environment
+*.env
+appsettings.Development.json
+appsettings.*.local.json
+
+# OS
+.DS_Store
+Thumbs.db
