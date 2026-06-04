@@ -48,6 +48,22 @@ builder.Services.AddHttpClient<IOllamaEmbeddingClient, OllamaEmbeddingClient>(cl
 });
 
 // ==========================================
+// 3.6. СЕРВИСЫ QDRANT
+// ==========================================
+builder.Services.AddHttpClient<IQdrantService, QdrantService>(client =>
+{
+    var qdrantSection = builder.Configuration.GetSection("Qdrant");
+    var endpoint = qdrantSection["Endpoint"] ?? "http://localhost:6333";
+    client.BaseAddress = new Uri(endpoint);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// ==========================================
+// 3.7. ИНДЕКСАЦИЯ ДОКУМЕНТАЦИИ ПРИ СТАРТЕ
+// ==========================================
+builder.Services.AddHostedService<DocumentationIndexerService>();
+
+// ==========================================
 // 3.5. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ
 // ==========================================
 builder.Services.AddSingleton<PromptLoader>();
