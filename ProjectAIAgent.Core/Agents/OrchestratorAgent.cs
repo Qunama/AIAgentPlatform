@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using ProjectAIAgent.Core.Models;
 using ProjectAIAgent.Core.Services;
 using ProjectAIAgent.Core.Tools;
 
@@ -9,7 +10,7 @@ namespace ProjectAIAgent.Core.Agents;
 
 /// <summary>
 /// Главный оркестрирующий агент. Принимает запросы пользователя,
-/// формирует план изменений и делегирует выполнение инструментам.
+/// формирует план изменений, выполняет шаги, валидирует и документирует результат.
 /// </summary>
 public class OrchestratorAgent : BaseAgent
 {
@@ -36,16 +37,14 @@ public class OrchestratorAgent : BaseAgent
     }
     
     /// <summary>
-    /// Основной метод: принять запрос пользователя и выполнить цикл оркестрации.
+    /// Основной метод: принять запрос пользователя и выполнить полный цикл оркестрации.
     /// </summary>
     public async Task<string> ProcessRequestAsync(string userRequest)
     {
         Logger.LogInformation("Orchestrator received request: {Request}", userRequest);
         
-        // Устанавливаем фазу планирования
-        _contextAgent.SetPhase(Models.WorkPhase.Planning);
-        
-        // Получаем сводку контекста от ContextAgent
+        // Фаза 1: Планирование
+        _contextAgent.SetPhase(WorkPhase.Planning);
         var contextSummary = _contextAgent.GetContextSummary();
         
         if (_llmService == null)
@@ -58,34 +57,26 @@ public class OrchestratorAgent : BaseAgent
                    $"Available tools: {_toolRegistry.GetAllTools().Count}";
         }
         
-        var systemPromptFinal = await GetSystemPromptAsync();
-        var toolsDesc = _toolRegistry.GetToolsDescription();
-        systemPromptFinal = systemPromptFinal.Replace("{TOOLS}", toolsDesc);
+        var systemPromptFinal = await BuildSystemPromptAsync(contextSummary);
         
-        // Добавляем контекст проекта в промпт
-        if (!string.IsNullOrWhiteSpace(contextSummary))
-        {
-            systemPromptFinal += $"\n\n## Current Project Context\n{contextSummary}";
-        }
-        
-        // Начинаем диалог с запроса пользователя и контекста
         var conversationHistory = new StringBuilder();
         conversationHistory.AppendLine($"[USER REQUEST]: {userRequest}");
         conversationHistory.AppendLine($"[PROJECT CONTEXT]: {contextSummary}");
-        conversationHistory.AppendLine("[INSTRUCTION]: Analyze the request and context. " +
-            "Decide the first action: 'delegate' to call a tool, or 'report' if the request is trivial.");
+        conversationHistory.AppendLine("[INSTRUCTION]: Analyze the request. " +
+            "If the request requires code changes, first explore the project structure, then read relevant files, " +
+            "then make changes. After all changes, run 'dotnet build' to validate. " +
+            "Start with the first tool call.");
         
         var iteration = 0;
+        string? lastToolName = null;
         
         while (iteration < MaxIterations)
         {
             iteration++;
             Logger.LogDebug("Orchestrator iteration {Iteration}/{MaxIterations}", iteration, MaxIterations);
             
-            // Устанавливаем фазу выполнения
-            _contextAgent.SetPhase(Models.WorkPhase.Executing);
+            _contextAgent.SetPhase(WorkPhase.Executing);
             
-            // Отправляем: системный промпт + историю диалога
             var llmResponse = await _llmService.GenerateAsync(
                 systemPromptFinal,
                 conversationHistory.ToString(),
@@ -95,24 +86,19 @@ public class OrchestratorAgent : BaseAgent
                 llmResponse.Length, 
                 llmResponse.Length > 500 ? llmResponse[..500] + "..." : llmResponse);
             
-            // Извлекаем JSON из ответа
             var actionPlan = ExtractActionPlanRobust(llmResponse);
             
             if (actionPlan == null)
             {
-                Logger.LogWarning("Failed to extract action plan from LLM response");
                 _contextAgent.RegisterError();
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
-                conversationHistory.AppendLine("[USER]: Your response must contain a valid JSON with 'action' field. " +
-                    "Valid actions: 'delegate' or 'report'. " +
-                    "For delegate: {\"action\":\"delegate\", \"tool\":\"tool_name\", \"args\":{...}}. " +
-                    "For report: {\"action\":\"report\", \"message\":\"your report here\"}. " +
-                    "Respond ONLY with the JSON, no markdown blocks, no extra text.");
+                conversationHistory.AppendLine("[USER]: Respond with valid JSON. " +
+                    "{\"action\":\"delegate\",\"tool\":\"tool_name\",\"args\":{...}} or " +
+                    "{\"action\":\"report\",\"message\":\"...\"}");
                 continue;
             }
             
-            // Определяем действие
             var action = actionPlan.TryGetValue("action", out var actionObj) 
                 ? actionObj?.ToString()?.ToLowerInvariant() 
                 : null;
@@ -121,18 +107,16 @@ public class OrchestratorAgent : BaseAgent
             
             if (action == "report")
             {
-                // Устанавливаем фазу отчёта
-                _contextAgent.SetPhase(Models.WorkPhase.Reporting);
+                _contextAgent.SetPhase(WorkPhase.Reporting);
                 
-                // Ищем сообщение в разных возможных полях
                 var finalMessage = 
                     TryGetStringField(actionPlan, "message") ??
                     TryGetStringField(actionPlan, "summary") ??
                     TryGetStringField(actionPlan, "report") ??
                     "Запрос выполнен.";
                 
-                // Записываем успешное взаимодействие в историю
                 _contextAgent.RecordInteraction(userRequest, finalMessage, true);
+                _contextAgent.SetPhase(WorkPhase.Idle);
                 
                 return finalMessage;
             }
@@ -140,62 +124,105 @@ public class OrchestratorAgent : BaseAgent
             if (action == "delegate" || action == "plan")
             {
                 var toolName = actionPlan.TryGetValue("tool", out var t) ? t?.ToString() : "unknown";
-                var toolResult = await ExecuteToolFromPlan(actionPlan);
+                lastToolName = toolName;
                 
+                var toolResult = await ExecuteToolFromPlan(actionPlan);
                 var toolSuccess = !toolResult.StartsWith("Error");
                 
                 if (toolSuccess)
                 {
-                    // Регистрируем изменённые файлы в ContextAgent
-                    if (toolName == "write_file" || toolName == "update_documentation")
-                    {
-                        if (actionPlan.TryGetValue("args", out var argsObj) && argsObj is Dictionary<string, object> argsDict)
-                        {
-                            if (argsDict.TryGetValue("file_path", out var fp) || argsDict.TryGetValue("path", out fp))
-                            {
-                                _contextAgent.RegisterFileModification(fp?.ToString() ?? "unknown");
-                            }
-                        }
-                    }
+                    RegisterToolSuccess(toolName, actionPlan);
                 }
                 else
                 {
                     _contextAgent.RegisterError();
                 }
                 
-                // Добавляем ответ ассистента и результат инструмента в историю
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
                 conversationHistory.AppendLine($"[TOOL RESULT — {toolName}]:");
                 conversationHistory.AppendLine(toolResult);
-                conversationHistory.AppendLine("[USER]: Based on this tool result, what's your next step? " +
-                    "If the user request is fulfilled, respond with action:'report'. " +
-                    "If you need another tool, respond with action:'delegate'. " +
-                    "Respond ONLY with JSON, no markdown.");
+                
+                // После успешной записи — предлагаем валидацию
+                if (toolSuccess && (toolName == "write_file" || toolName == "update_documentation"))
+                {
+                    conversationHistory.AppendLine("[USER]: File modified. " +
+                        "Consider running 'dotnet build' to validate changes. " +
+                        "If validation passes, report the result. If it fails, fix the errors.");
+                }
+                // После сборки — анализируем результат
+                else if (toolName == "run_shell_command")
+                {
+                    conversationHistory.AppendLine("[USER]: Command executed. " +
+                        "If it succeeded, proceed. If it failed, analyze the errors and fix them. " +
+                        "After fixing, run the build again.");
+                }
+                else
+                {
+                    conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? " +
+                        "If done, run 'dotnet build' to validate, then report. " +
+                        "Respond ONLY with JSON.");
+                }
                 continue;
             }
             
-            // Неизвестное действие — просим уточнить
             _contextAgent.RegisterError();
             Logger.LogWarning("Unknown action: {Action}", action);
             conversationHistory.AppendLine();
             conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
-            conversationHistory.AppendLine("[USER]: Unknown action. Valid actions are 'delegate' and 'report'. " +
-                "Respond ONLY with JSON.");
+            conversationHistory.AppendLine("[USER]: Unknown action. Valid: 'delegate' or 'report'. Respond ONLY with JSON.");
         }
         
         Logger.LogWarning("Orchestrator reached max iterations ({MaxIterations})", MaxIterations);
         _contextAgent.RecordInteraction(userRequest, "Max iterations reached", false);
-        _contextAgent.SetPhase(Models.WorkPhase.Idle);
+        _contextAgent.SetPhase(WorkPhase.Idle);
         return "⚠️ Достигнут лимит итераций. Пожалуйста, уточните запрос.";
     }
     
     /// <summary>
-    /// Извлекает JSON из ответа LLM. Поддерживает:
-    /// - Чистый JSON: {"action": ...}
-    /// - JSON в Markdown-блоке: ```json { ... } ```
-    /// - JSON внутри обычного текста
+    /// Строит системный промпт с инструментами и контекстом.
     /// </summary>
+    private async Task<string> BuildSystemPromptAsync(string contextSummary)
+    {
+        var prompt = await GetSystemPromptAsync();
+        var toolsDesc = _toolRegistry.GetToolsDescription();
+        prompt = prompt.Replace("{TOOLS}", toolsDesc);
+        
+        if (!string.IsNullOrWhiteSpace(contextSummary))
+        {
+            prompt += $"\n\n## Current Project Context\n{contextSummary}";
+        }
+        
+        return prompt;
+    }
+    
+    /// <summary>
+    /// Регистрирует успешный вызов инструмента в ContextAgent.
+    /// </summary>
+    private void RegisterToolSuccess(string? toolName, Dictionary<string, object> actionPlan)
+    {
+        if (toolName == "write_file" || toolName == "update_documentation")
+        {
+            if (actionPlan.TryGetValue("args", out var argsObj))
+            {
+                var argsDict = argsObj as Dictionary<string, object>;
+                if (argsDict != null)
+                {
+                    if (argsDict.TryGetValue("file_path", out var fp) || argsDict.TryGetValue("path", out fp))
+                    {
+                        _contextAgent.RegisterFileModification(fp?.ToString() ?? "unknown");
+                    }
+                }
+            }
+        }
+        
+        if (toolName == "project_structure")
+        {
+            // Кешируем структуру проекта (результат будет в следующей итерации)
+            // ContextAgent.CacheProjectStructure() будет вызван при получении результата
+        }
+    }
+    
     private Dictionary<string, object>? ExtractActionPlanRobust(string llmResponse)
     {
         var codeBlocks = LlmResponseParser.ExtractAllCodeBlocks(llmResponse);
@@ -210,57 +237,22 @@ public class OrchestratorAgent : BaseAgent
         return LlmResponseParser.ExtractActionPlan(llmResponse);
     }
     
-    /// <summary>
-    /// Безопасно извлекает строковое поле из словаря.
-    /// </summary>
     private static string? TryGetStringField(Dictionary<string, object> dict, string key)
     {
         if (dict.TryGetValue(key, out var value) && value != null)
-        {
             return value.ToString();
-        }
         return null;
     }
     
-    /// <summary>
-    /// Извлекает из плана имя инструмента и аргументы, вызывает инструмент, возвращает результат.
-    /// </summary>
     private async Task<string> ExecuteToolFromPlan(Dictionary<string, object> actionPlan)
     {
         try
         {
             if (!actionPlan.TryGetValue("tool", out var toolObj) || toolObj == null)
-            {
-                return "Error: 'tool' field is missing in the action plan.";
-            }
+                return "Error: 'tool' field is missing.";
             
             var toolName = toolObj.ToString()!;
-            
-            var args = new Dictionary<string, object>();
-            if (actionPlan.TryGetValue("args", out var argsObj) && argsObj != null)
-            {
-                if (argsObj is Dictionary<string, object> argsDict)
-                {
-                    foreach (var kvp in argsDict)
-                    {
-                        args[kvp.Key] = kvp.Value;
-                    }
-                }
-                else if (argsObj is JsonElement argsElement && argsElement.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var prop in argsElement.EnumerateObject())
-                    {
-                        args[prop.Name] = prop.Value.ValueKind switch
-                        {
-                            JsonValueKind.String => prop.Value.GetString()!,
-                            JsonValueKind.Number => prop.Value.TryGetInt32(out var i) ? i : prop.Value.GetDouble(),
-                            JsonValueKind.True => true,
-                            JsonValueKind.False => false,
-                            _ => prop.Value.GetRawText()
-                        };
-                    }
-                }
-            }
+            var args = ParseArgs(actionPlan);
             
             Logger.LogInformation("Executing tool: {ToolName} with args: {@Args}", toolName, args);
             
@@ -270,20 +262,46 @@ public class OrchestratorAgent : BaseAgent
             {
                 var output = result.Output ?? "No output";
                 if (output.Length > 3000)
-                {
                     output = output[..3000] + $"\n... [truncated, total {output.Length} chars]";
-                }
                 return $"Success: {output}";
             }
-            else
-            {
-                return $"Error: {result.Error}";
-            }
+            
+            return $"Error: {result.Error}";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to execute tool from plan");
-            return $"Error executing tool: {ex.Message}";
+            Logger.LogError(ex, "Failed to execute tool");
+            return $"Error: {ex.Message}";
         }
+    }
+    
+    private static Dictionary<string, object> ParseArgs(Dictionary<string, object> actionPlan)
+    {
+        var args = new Dictionary<string, object>();
+        
+        if (!actionPlan.TryGetValue("args", out var argsObj) || argsObj == null)
+            return args;
+        
+        if (argsObj is Dictionary<string, object> argsDict)
+        {
+            foreach (var kvp in argsDict)
+                args[kvp.Key] = kvp.Value;
+        }
+        else if (argsObj is JsonElement argsElement && argsElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in argsElement.EnumerateObject())
+            {
+                args[prop.Name] = prop.Value.ValueKind switch
+                {
+                    JsonValueKind.String => prop.Value.GetString()!,
+                    JsonValueKind.Number => prop.Value.TryGetInt32(out var i) ? i : prop.Value.GetDouble(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => prop.Value.GetRawText()
+                };
+            }
+        }
+        
+        return args;
     }
 }
