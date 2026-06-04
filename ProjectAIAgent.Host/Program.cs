@@ -36,6 +36,11 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
 builder.Services.AddSingleton<ILlmService, LlmService>();
 
 // ==========================================
+// 3.1. СЕРВИС ВАЛИДАЦИИ СБОРКИ
+// ==========================================
+builder.Services.AddSingleton<BuildValidationService>();
+
+// ==========================================
 // 4. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
 // ==========================================
 builder.Services.AddSingleton<IDocumentationService, DocumentationService>();

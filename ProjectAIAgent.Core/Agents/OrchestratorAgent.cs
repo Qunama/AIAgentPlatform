@@ -8,10 +8,6 @@ using ProjectAIAgent.Core.Tools;
 
 namespace ProjectAIAgent.Core.Agents;
 
-/// <summary>
-/// Главный оркестрирующий агент. Принимает запросы пользователя,
-/// формирует план изменений, выполняет шаги, валидирует и документирует результат.
-/// </summary>
 public class OrchestratorAgent : BaseAgent
 {
     public override string Name => "Orchestrator";
@@ -21,6 +17,7 @@ public class OrchestratorAgent : BaseAgent
     private readonly ToolRegistry _toolRegistry;
     private readonly ILlmService? _llmService;
     private readonly ContextAgent _contextAgent;
+    private readonly BuildValidationService _buildValidation;
     private const int MaxIterations = 10;
     
     public OrchestratorAgent(
@@ -28,22 +25,20 @@ public class OrchestratorAgent : BaseAgent
         IServiceProvider serviceProvider,
         ToolRegistry toolRegistry,
         ContextAgent contextAgent,
+        BuildValidationService buildValidation,
         ILlmService? llmService = null)
         : base(logger, serviceProvider)
     {
         _toolRegistry = toolRegistry;
         _contextAgent = contextAgent ?? throw new ArgumentNullException(nameof(contextAgent));
+        _buildValidation = buildValidation ?? throw new ArgumentNullException(nameof(buildValidation));
         _llmService = llmService;
     }
     
-    /// <summary>
-    /// Основной метод: принять запрос пользователя и выполнить полный цикл оркестрации.
-    /// </summary>
     public async Task<string> ProcessRequestAsync(string userRequest)
     {
         Logger.LogInformation("Orchestrator received request: {Request}", userRequest);
         
-        // Фаза 1: Планирование
         _contextAgent.SetPhase(WorkPhase.Planning);
         var contextSummary = _contextAgent.GetContextSummary();
         
@@ -57,18 +52,20 @@ public class OrchestratorAgent : BaseAgent
                    $"Available tools: {_toolRegistry.GetAllTools().Count}";
         }
         
+        // Сбрасываем историю сборок для нового запроса
+        _buildValidation.Reset();
+        
         var systemPromptFinal = await BuildSystemPromptAsync(contextSummary);
         
         var conversationHistory = new StringBuilder();
         conversationHistory.AppendLine($"[USER REQUEST]: {userRequest}");
         conversationHistory.AppendLine($"[PROJECT CONTEXT]: {contextSummary}");
         conversationHistory.AppendLine("[INSTRUCTION]: Analyze the request. " +
-            "If the request requires code changes, first explore the project structure, then read relevant files, " +
-            "then make changes. After all changes, run 'dotnet build' to validate. " +
-            "Start with the first tool call.");
+            "If code changes are needed: explore structure -> read files -> make changes -> run 'dotnet build'. " +
+            "If build fails, fix errors and retry. After successful build, report. Start with the first tool call.");
         
         var iteration = 0;
-        string? lastToolName = null;
+        var buildAttemptCount = 0;
         
         while (iteration < MaxIterations)
         {
@@ -124,43 +121,74 @@ public class OrchestratorAgent : BaseAgent
             if (action == "delegate" || action == "plan")
             {
                 var toolName = actionPlan.TryGetValue("tool", out var t) ? t?.ToString() : "unknown";
-                lastToolName = toolName;
+                
+                // Если запрошен dotnet build — выполняем через BuildValidationService
+                if (toolName == "run_shell_command" && 
+                    actionPlan.TryGetValue("args", out var rawArgs) &&
+                    rawArgs is Dictionary<string, object> argsDict &&
+                    argsDict.TryGetValue("command", out var cmd) &&
+                    cmd?.ToString()?.Contains("dotnet build") == true)
+                {
+                    buildAttemptCount++;
+                    _contextAgent.SetPhase(WorkPhase.Validating);
+                    
+                    var projectPath = _contextAgent.GetContext().ProjectPath;
+                    if (string.IsNullOrWhiteSpace(projectPath))
+                        projectPath = Directory.GetCurrentDirectory();
+                    
+                    var buildResult = await _buildValidation.BuildAsync(projectPath);
+                    
+                    conversationHistory.AppendLine();
+                    conversationHistory.AppendLine($"[BUILD RESULT — attempt {buildAttemptCount}/{_buildValidation.MaxBuildAttempts}]:");
+                    conversationHistory.AppendLine(buildResult.GetSummary());
+                    
+                    if (buildResult.Success)
+                    {
+                        conversationHistory.AppendLine("[USER]: Build succeeded! Changes are valid. " +
+                            "Show git diff to see what changed, then report the result.");
+                    }
+                    else if (buildResult.ShouldRetry)
+                    {
+                        conversationHistory.AppendLine("[USER]: Build failed. " +
+                            $"You have {buildResult.RemainingAttempts} attempts left. " +
+                            "Analyze the errors above, fix the code with write_file, then run dotnet build again. " +
+                            "Respond with action:'delegate' to fix the errors.");
+                    }
+                    else
+                    {
+                        conversationHistory.AppendLine("[USER]: All build attempts exhausted. " +
+                            "Report the failure with the errors and suggest manual intervention.");
+                    }
+                    continue;
+                }
                 
                 var toolResult = await ExecuteToolFromPlan(actionPlan);
                 var toolSuccess = !toolResult.StartsWith("Error");
                 
                 if (toolSuccess)
-                {
                     RegisterToolSuccess(toolName, actionPlan);
-                }
                 else
-                {
                     _contextAgent.RegisterError();
-                }
                 
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
                 conversationHistory.AppendLine($"[TOOL RESULT — {toolName}]:");
                 conversationHistory.AppendLine(toolResult);
                 
-                // После успешной записи — предлагаем валидацию
                 if (toolSuccess && (toolName == "write_file" || toolName == "update_documentation"))
                 {
                     conversationHistory.AppendLine("[USER]: File modified. " +
-                        "Consider running 'dotnet build' to validate changes. " +
-                        "If validation passes, report the result. If it fails, fix the errors.");
+                        "Run 'dotnet build' to validate. " +
+                        "Use: {\"action\":\"delegate\",\"tool\":\"run_shell_command\",\"args\":{\"command\":\"dotnet build\"}}");
                 }
-                // После сборки — анализируем результат
                 else if (toolName == "run_shell_command")
                 {
-                    conversationHistory.AppendLine("[USER]: Command executed. " +
-                        "If it succeeded, proceed. If it failed, analyze the errors and fix them. " +
-                        "After fixing, run the build again.");
+                    conversationHistory.AppendLine("[USER]: Command executed. If it succeeded, proceed. " +
+                        "If it failed, fix the errors and retry. Respond ONLY with JSON.");
                 }
                 else
                 {
                     conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? " +
-                        "If done, run 'dotnet build' to validate, then report. " +
                         "Respond ONLY with JSON.");
                 }
                 continue;
@@ -179,9 +207,6 @@ public class OrchestratorAgent : BaseAgent
         return "⚠️ Достигнут лимит итераций. Пожалуйста, уточните запрос.";
     }
     
-    /// <summary>
-    /// Строит системный промпт с инструментами и контекстом.
-    /// </summary>
     private async Task<string> BuildSystemPromptAsync(string contextSummary)
     {
         var prompt = await GetSystemPromptAsync();
@@ -189,51 +214,32 @@ public class OrchestratorAgent : BaseAgent
         prompt = prompt.Replace("{TOOLS}", toolsDesc);
         
         if (!string.IsNullOrWhiteSpace(contextSummary))
-        {
             prompt += $"\n\n## Current Project Context\n{contextSummary}";
-        }
         
         return prompt;
     }
     
-    /// <summary>
-    /// Регистрирует успешный вызов инструмента в ContextAgent.
-    /// </summary>
     private void RegisterToolSuccess(string? toolName, Dictionary<string, object> actionPlan)
     {
         if (toolName == "write_file" || toolName == "update_documentation")
         {
-            if (actionPlan.TryGetValue("args", out var argsObj))
+            if (actionPlan.TryGetValue("args", out var argsObj) && argsObj is Dictionary<string, object> argsDict)
             {
-                var argsDict = argsObj as Dictionary<string, object>;
-                if (argsDict != null)
-                {
-                    if (argsDict.TryGetValue("file_path", out var fp) || argsDict.TryGetValue("path", out fp))
-                    {
-                        _contextAgent.RegisterFileModification(fp?.ToString() ?? "unknown");
-                    }
-                }
+                if (argsDict.TryGetValue("file_path", out var fp) || argsDict.TryGetValue("path", out fp))
+                    _contextAgent.RegisterFileModification(fp?.ToString() ?? "unknown");
             }
-        }
-        
-        if (toolName == "project_structure")
-        {
-            // Кешируем структуру проекта (результат будет в следующей итерации)
-            // ContextAgent.CacheProjectStructure() будет вызван при получении результата
         }
     }
     
     private Dictionary<string, object>? ExtractActionPlanRobust(string llmResponse)
     {
         var codeBlocks = LlmResponseParser.ExtractAllCodeBlocks(llmResponse);
-        
         foreach (var block in codeBlocks)
         {
             var plan = LlmResponseParser.ExtractActionPlan(block);
             if (plan != null && plan.ContainsKey("action"))
                 return plan;
         }
-        
         return LlmResponseParser.ExtractActionPlan(llmResponse);
     }
     
