@@ -14,6 +14,8 @@ builder.Services.Configure<OllamaOptions>(
     builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
+builder.Services.Configure<QdrantOptions>(
+    builder.Configuration.GetSection("Qdrant"));
 
 // ==========================================
 // 2. HTTP-КЛИЕНТ ДЛЯ OLLAMA (прямые вызовы /api/generate)
@@ -29,15 +31,13 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
 });
 
 // ==========================================
-// 3. НАШИ АБСТРАКЦИИ
+// 3. LLM-СЕРВИС
 // ==========================================
 builder.Services.AddSingleton<ILlmService, LlmService>();
 
 // ==========================================
-// 3.5. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
+// 4. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
 // ==========================================
-builder.Services.Configure<QdrantOptions>(
-    builder.Configuration.GetSection("Qdrant"));
 builder.Services.AddSingleton<IDocumentationService, DocumentationService>();
 builder.Services.AddHttpClient<IOllamaEmbeddingClient, OllamaEmbeddingClient>(client =>
 {
@@ -48,7 +48,7 @@ builder.Services.AddHttpClient<IOllamaEmbeddingClient, OllamaEmbeddingClient>(cl
 });
 
 // ==========================================
-// 3.6. СЕРВИСЫ QDRANT
+// 5. СЕРВИСЫ QDRANT
 // ==========================================
 builder.Services.AddHttpClient<IQdrantService, QdrantService>(client =>
 {
@@ -59,23 +59,18 @@ builder.Services.AddHttpClient<IQdrantService, QdrantService>(client =>
 });
 
 // ==========================================
-// 3.7. ИНДЕКСАЦИЯ ДОКУМЕНТАЦИИ ПРИ СТАРТЕ
-// ==========================================
-builder.Services.AddHostedService<DocumentationIndexerService>();
-
-// ==========================================
-// 3.5. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ
+// 6. СЕРВИСЫ ТЕСТИРОВАНИЯ ПРОМПТОВ
 // ==========================================
 builder.Services.AddSingleton<PromptLoader>();
 builder.Services.AddSingleton<PromptTesterService>();
 
 // ==========================================
-// 4. ИНСТРУМЕНТЫ (автоматическая регистрация)
+// 7. ИНСТРУМЕНТЫ (автоматическая регистрация)
 // ==========================================
 builder.Services.AddAgentTools(typeof(BaseAgent).Assembly);
 
 // ==========================================
-// 5. АГЕНТЫ
+// 8. АГЕНТЫ
 // ==========================================
 builder.Services.AddSingleton<OrchestratorAgent>();
 builder.Services.AddSingleton<CodeEditorAgent>();
@@ -83,12 +78,17 @@ builder.Services.AddSingleton<DocumentationAgent>();
 builder.Services.AddSingleton<ContextAgent>();
 
 // ==========================================
-// 6. ФОНОВАЯ СЛУЖБА (интерактивный цикл)
+// 9. ФОНОВЫЕ СЛУЖБЫ
 // ==========================================
+// Индексация документации при старте
+builder.Services.AddHostedService<DocumentationIndexerService>();
+// Отслеживание изменений в реальном времени
+builder.Services.AddHostedService<DocumentationWatcherService>();
+// Интерактивный цикл (режим Агента / Тестирования)
 builder.Services.AddHostedService<AgentWorkerService>();
 
 // ==========================================
-// 7. ЗАПУСК
+// 10. ЗАПУСК
 // ==========================================
 var host = builder.Build();
 await host.RunAsync();
