@@ -1,13 +1,14 @@
 // ProjectAIAgent.Host/Program.cs
+using System.CommandLine;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ProjectAIAgent.Core.Agents;
 using ProjectAIAgent.Core.Services;
 using ProjectAIAgent.Core.Tools;
 using ProjectAIAgent.Host;
-using System.CommandLine;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 // ==========================================
 // 1. КОНФИГУРАЦИЯ
@@ -20,7 +21,7 @@ builder.Services.Configure<QdrantOptions>(
     builder.Configuration.GetSection("Qdrant"));
 
 // ==========================================
-// 2. HTTP-КЛИЕНТ ДЛЯ OLLAMA (прямые вызовы /api/generate)
+// 2. HTTP-КЛИЕНТ ДЛЯ OLLAMA
 // ==========================================
 builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, OllamaApiClientWrapper>(client =>
 {
@@ -32,18 +33,10 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
 });
 
 // ==========================================
-// 3. LLM-СЕРВИС
+// 3. LLM-СЕРВИС, ВАЛИДАЦИЯ, ОТЧЁТЫ
 // ==========================================
 builder.Services.AddSingleton<ILlmService, LlmService>();
-
-// ==========================================
-// 3.1. СЕРВИС ВАЛИДАЦИИ СБОРКИ
-// ==========================================
 builder.Services.AddSingleton<BuildValidationService>();
-
-// ==========================================
-// 3.2. СЕРВИС ОТЧЁТОВ
-// ==========================================
 builder.Services.AddSingleton<ReportService>();
 
 // ==========================================
@@ -97,21 +90,25 @@ builder.Services.AddHostedService<DocumentationWatcherService>();
 builder.Services.AddHostedService<AgentWorkerService>();
 
 // ==========================================
-// 10. ЗАПУСК
+// 10. КОНТРОЛЛЕРЫ
 // ==========================================
-var host = builder.Build();
+builder.Services.AddControllers();
 
-// Проверяем, есть ли аргументы командной строки
+// ==========================================
+// 11. СБОРКА И ЗАПУСК
+// ==========================================
+var app = builder.Build();
+
+app.MapControllers();
+
+// Проверяем CLI-режим
 var cliArgs = args.Where(a => !a.StartsWith("--")).ToList();
 if (cliArgs.Count > 0)
 {
-    // Режим CLI — выполняем команду и выходим
-    var cliService = host.Services.GetRequiredService<CliService>();
+    var cliService = app.Services.GetRequiredService<CliService>();
     var rootCommand = cliService.CreateRootCommand();
     await rootCommand.InvokeAsync(args);
+    return;
 }
-else
-{
-    // Интерактивный режим
-    await host.RunAsync();
-}
+
+await app.RunAsync();
