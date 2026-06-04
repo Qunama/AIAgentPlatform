@@ -26,7 +26,6 @@ public class OllamaApiClientWrapper : ProjectAIAgent.Core.Services.IOllamaApiCli
         GenerateRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Диагностика: выводим URL, на который стучимся
         var fullUrl = $"{_httpClient.BaseAddress}api/generate";
         _logger.LogInformation("📡 Отправка запроса к Ollama: {Url}", fullUrl);
         _logger.LogInformation("📋 Модель: {Model}, длина промпта: {Length} символов", 
@@ -34,18 +33,25 @@ public class OllamaApiClientWrapper : ProjectAIAgent.Core.Services.IOllamaApiCli
 
         // Формируем тело запроса
         object finalRequestBody;
-        if (request.Options != null)
+        var requestOptions = request.Options;
+        if (requestOptions != null)
         {
+#pragma warning disable CS8601
+            var temperature = requestOptions.Temperature;
+            var topP = requestOptions.TopP;
+            var numPredict = requestOptions.NumPredict;
+#pragma warning restore CS8601
+            
             finalRequestBody = new
             {
                 model = request.Model,
-                prompt = request.Prompt,
+                prompt = request.Prompt ?? string.Empty,
                 stream = false,
                 options = new Dictionary<string, object>
                 {
-                    ["temperature"] = request.Options.Temperature,
-                    ["top_p"] = request.Options.TopP,
-                    ["num_predict"] = request.Options.NumPredict
+                    ["temperature"] = temperature,
+                    ["top_p"] = topP,
+                    ["num_predict"] = numPredict
                 }
             };
         }
@@ -54,7 +60,7 @@ public class OllamaApiClientWrapper : ProjectAIAgent.Core.Services.IOllamaApiCli
             finalRequestBody = new
             {
                 model = request.Model,
-                prompt = request.Prompt,
+                prompt = request.Prompt ?? string.Empty,
                 stream = false
             };
         }
@@ -62,7 +68,6 @@ public class OllamaApiClientWrapper : ProjectAIAgent.Core.Services.IOllamaApiCli
         var json = JsonSerializer.Serialize(finalRequestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        // Вызов API
         var response = await _httpClient.PostAsync("/api/generate", content, cancellationToken);
         
         if (!response.IsSuccessStatusCode)

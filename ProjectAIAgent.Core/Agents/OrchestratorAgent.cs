@@ -42,8 +42,8 @@ public class OrchestratorAgent : BaseAgent
         _llmService = llmService;
         
         // Пытаемся получить SignalRLoggingService (может отсутствовать в консольном режиме)
-        _signalRService = serviceProvider.GetService(
-            Type.GetType("ProjectAIAgent.Host.SignalRLoggingService, ProjectAIAgent.Host", throwOnError: false));
+        var signalRType = Type.GetType("ProjectAIAgent.Host.SignalRLoggingService, ProjectAIAgent.Host", throwOnError: false);
+        _signalRService = signalRType != null ? serviceProvider.GetService(signalRType) : null;
     }
     
     public async Task<string> ProcessRequestAsync(string userRequest)
@@ -189,19 +189,19 @@ public class OrchestratorAgent : BaseAgent
                 }
                 
                 toolCallCount++;
-                toolsUsed.Add(toolName);
+                toolsUsed.Add(toolName ?? "unknown");
                 
                 var toolResult = await ExecuteToolFromPlan(actionPlan);
                 var toolSuccess = !toolResult.StartsWith("Error");
                 
-                await SendToolExecutionAsync(toolName, toolSuccess, toolResult.Truncate(200));
+                await SendToolExecutionAsync(toolName!, toolSuccess, toolResult.Truncate(200));
                 
                 if (toolSuccess)
                     RegisterToolSuccess(toolName, actionPlan);
                 else
                 {
                     _contextAgent.RegisterError();
-                    errors.Add($"Tool '{toolName}' failed: {toolResult}");
+                    errors.Add($"Tool '{toolName}' failed: {toolResult}!");
                 }
                 
                 conversationHistory.AppendLine();
@@ -273,9 +273,13 @@ public class OrchestratorAgent : BaseAgent
         {
             var method = _signalRService.GetType().GetMethod("SendPhaseUpdateAsync");
             if (method != null)
-                await (Task)method.Invoke(_signalRService, new object[] { phase });
+            {
+                var task = method.Invoke(_signalRService, new object[] { phase }) as Task;
+                if (task != null)
+                    await task;
+            }
         }
-        catch { /* SignalR не критичен */ }
+        catch { }
     }
     
     private async Task SendToolExecutionAsync(string toolName, bool success, string? summary)
@@ -285,7 +289,11 @@ public class OrchestratorAgent : BaseAgent
         {
             var method = _signalRService.GetType().GetMethod("SendToolExecutionAsync");
             if (method != null)
-                await (Task)method.Invoke(_signalRService, new object?[] { toolName, success, summary });
+            {
+                var task = method.Invoke(_signalRService, new object?[] { toolName, success, summary }) as Task;
+                if (task != null)
+                    await task;
+            }
         }
         catch { }
     }
@@ -297,7 +305,11 @@ public class OrchestratorAgent : BaseAgent
         {
             var method = _signalRService.GetType().GetMethod("SendBuildResultAsync");
             if (method != null)
-                await (Task)method.Invoke(_signalRService, new object?[] { success, attempt, summary });
+            {
+                var task = method.Invoke(_signalRService, new object?[] { success, attempt, summary }) as Task;
+                if (task != null)
+                    await task;
+            }
         }
         catch { }
     }
@@ -309,7 +321,11 @@ public class OrchestratorAgent : BaseAgent
         {
             var method = _signalRService.GetType().GetMethod("SendFinalResultAsync");
             if (method != null)
-                await (Task)method.Invoke(_signalRService, new object?[] { success, report });
+            {
+                var task = method.Invoke(_signalRService, new object?[] { success, report }) as Task;
+                if (task != null)
+                    await task;
+            }
         }
         catch { }
     }
