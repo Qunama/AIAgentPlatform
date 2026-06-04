@@ -18,6 +18,7 @@ public class OrchestratorAgent : BaseAgent
     private readonly ILlmService? _llmService;
     private readonly ContextAgent _contextAgent;
     private readonly BuildValidationService _buildValidation;
+    private readonly ReportService _reportService;
     private const int MaxIterations = 10;
     
     public OrchestratorAgent(
@@ -26,17 +27,28 @@ public class OrchestratorAgent : BaseAgent
         ToolRegistry toolRegistry,
         ContextAgent contextAgent,
         BuildValidationService buildValidation,
+        ReportService reportService,
         ILlmService? llmService = null)
         : base(logger, serviceProvider)
     {
         _toolRegistry = toolRegistry;
         _contextAgent = contextAgent ?? throw new ArgumentNullException(nameof(contextAgent));
         _buildValidation = buildValidation ?? throw new ArgumentNullException(nameof(buildValidation));
+        _reportService = reportService ?? throw new ArgumentNullException(nameof(reportService));
         _llmService = llmService;
     }
     
     public async Task<string> ProcessRequestAsync(string userRequest)
     {
+        var startedAt = DateTime.UtcNow;
+        var toolsUsed = new List<string>();
+        var errors = new List<string>();
+        var llmCallCount = 0;
+        var toolCallCount = 0;
+        var validationResult = string.Empty;
+        bool success = false;
+        string finalMessage = string.Empty;
+        
         Logger.LogInformation("Orchestrator received request: {Request}", userRequest);
         
         _contextAgent.SetPhase(WorkPhase.Planning);
@@ -52,7 +64,6 @@ public class OrchestratorAgent : BaseAgent
                    $"Available tools: {_toolRegistry.GetAllTools().Count}";
         }
         
-        // Сбрасываем историю сборок для нового запроса
         _buildValidation.Reset();
         
         var systemPromptFinal = await BuildSystemPromptAsync(contextSummary);
@@ -74,6 +85,7 @@ public class OrchestratorAgent : BaseAgent
             
             _contextAgent.SetPhase(WorkPhase.Executing);
             
+            llmCallCount++;
             var llmResponse = await _llmService.GenerateAsync(
                 systemPromptFinal,
                 conversationHistory.ToString(),
@@ -88,6 +100,7 @@ public class OrchestratorAgent : BaseAgent
             if (actionPlan == null)
             {
                 _contextAgent.RegisterError();
+                errors.Add("Failed to parse LLM response");
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
                 conversationHistory.AppendLine("[USER]: Respond with valid JSON. " +
@@ -105,17 +118,15 @@ public class OrchestratorAgent : BaseAgent
             if (action == "report")
             {
                 _contextAgent.SetPhase(WorkPhase.Reporting);
+                success = true;
                 
-                var finalMessage = 
+                finalMessage = 
                     TryGetStringField(actionPlan, "message") ??
                     TryGetStringField(actionPlan, "summary") ??
                     TryGetStringField(actionPlan, "report") ??
                     "Запрос выполнен.";
                 
-                _contextAgent.RecordInteraction(userRequest, finalMessage, true);
-                _contextAgent.SetPhase(WorkPhase.Idle);
-                
-                return finalMessage;
+                break;
             }
             
             if (action == "delegate" || action == "plan")
@@ -125,8 +136,8 @@ public class OrchestratorAgent : BaseAgent
                 // Если запрошен dotnet build — выполняем через BuildValidationService
                 if (toolName == "run_shell_command" && 
                     actionPlan.TryGetValue("args", out var rawArgs) &&
-                    rawArgs is Dictionary<string, object> argsDict &&
-                    argsDict.TryGetValue("command", out var cmd) &&
+                    rawArgs is Dictionary<string, object> buildArgs &&
+                    buildArgs.TryGetValue("command", out var cmd) &&
                     cmd?.ToString()?.Contains("dotnet build") == true)
                 {
                     buildAttemptCount++;
@@ -137,6 +148,13 @@ public class OrchestratorAgent : BaseAgent
                         projectPath = Directory.GetCurrentDirectory();
                     
                     var buildResult = await _buildValidation.BuildAsync(projectPath);
+                    
+                    if (buildResult.Success)
+                        validationResult = $"✅ Сборка успешна (попытка {buildResult.AttemptNumber})";
+                    else if (!buildResult.ShouldRetry)
+                        validationResult = $"❌ Сборка провалена после {buildResult.AttemptNumber} попыток";
+                    else
+                        validationResult = $"🔄 Сборка не удалась (попытка {buildResult.AttemptNumber}), осталось {buildResult.RemainingAttempts}";
                     
                     conversationHistory.AppendLine();
                     conversationHistory.AppendLine($"[BUILD RESULT — attempt {buildAttemptCount}/{_buildValidation.MaxBuildAttempts}]:");
@@ -151,8 +169,7 @@ public class OrchestratorAgent : BaseAgent
                     {
                         conversationHistory.AppendLine("[USER]: Build failed. " +
                             $"You have {buildResult.RemainingAttempts} attempts left. " +
-                            "Analyze the errors above, fix the code with write_file, then run dotnet build again. " +
-                            "Respond with action:'delegate' to fix the errors.");
+                            "Analyze the errors above, fix the code with write_file, then run dotnet build again.");
                     }
                     else
                     {
@@ -162,13 +179,19 @@ public class OrchestratorAgent : BaseAgent
                     continue;
                 }
                 
+                toolCallCount++;
+                toolsUsed.Add(toolName);
+                
                 var toolResult = await ExecuteToolFromPlan(actionPlan);
                 var toolSuccess = !toolResult.StartsWith("Error");
                 
                 if (toolSuccess)
                     RegisterToolSuccess(toolName, actionPlan);
                 else
+                {
                     _contextAgent.RegisterError();
+                    errors.Add($"Tool '{toolName}' failed: {toolResult}");
+                }
                 
                 conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
@@ -195,16 +218,40 @@ public class OrchestratorAgent : BaseAgent
             }
             
             _contextAgent.RegisterError();
+            errors.Add($"Unknown action: {action}");
             Logger.LogWarning("Unknown action: {Action}", action);
             conversationHistory.AppendLine();
             conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
             conversationHistory.AppendLine("[USER]: Unknown action. Valid: 'delegate' or 'report'. Respond ONLY with JSON.");
         }
         
-        Logger.LogWarning("Orchestrator reached max iterations ({MaxIterations})", MaxIterations);
-        _contextAgent.RecordInteraction(userRequest, "Max iterations reached", false);
+        if (!success && string.IsNullOrEmpty(finalMessage))
+        {
+            finalMessage = "⚠️ Достигнут лимит итераций. Пожалуйста, уточните запрос.";
+            Logger.LogWarning("Orchestrator reached max iterations ({MaxIterations})", MaxIterations);
+        }
+        
+        _contextAgent.RecordInteraction(userRequest, finalMessage, success);
         _contextAgent.SetPhase(WorkPhase.Idle);
-        return "⚠️ Достигнут лимит итераций. Пожалуйста, уточните запрос.";
+        
+        // Генерируем форматированный отчёт
+        var modifiedFiles = _contextAgent.GetContext().ModifiedFiles;
+        
+        var reportData = new ReportData
+        {
+            UserRequest = userRequest,
+            Message = finalMessage,
+            Success = success,
+            ModifiedFiles = modifiedFiles,
+            ValidationResult = string.IsNullOrWhiteSpace(validationResult) ? null : validationResult,
+            Errors = errors,
+            ToolsUsed = toolsUsed,
+            Duration = DateTime.UtcNow - startedAt,
+            LlmCallCount = llmCallCount,
+            ToolCallCount = toolCallCount
+        };
+        
+        return _reportService.GenerateReport(reportData);
     }
     
     private async Task<string> BuildSystemPromptAsync(string contextSummary)

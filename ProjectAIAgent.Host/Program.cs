@@ -39,6 +39,7 @@ builder.Services.AddSingleton<ILlmService, LlmService>();
 // 3.1. СЕРВИС ВАЛИДАЦИИ СБОРКИ
 // ==========================================
 builder.Services.AddSingleton<BuildValidationService>();
+builder.Services.AddSingleton<ReportService>();
 
 // ==========================================
 // 4. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
