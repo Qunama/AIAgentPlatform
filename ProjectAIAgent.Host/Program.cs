@@ -90,14 +90,35 @@ builder.Services.AddHostedService<DocumentationWatcherService>();
 builder.Services.AddHostedService<AgentWorkerService>();
 
 // ==========================================
-// 10. КОНТРОЛЛЕРЫ
+// 10. КОНТРОЛЛЕРЫ И SWAGGER
 // ==========================================
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "AI Agent Platform API",
+        Version = "v1",
+        Description = "API для управления AI-агентом. Позволяет устанавливать путь к проекту, отправлять запросы, получать статус и историю."
+    });
+});
 
 // ==========================================
 // 11. СБОРКА И ЗАПУСК
 // ==========================================
 var app = builder.Build();
+
+// Swagger (доступен всегда, даже в development)
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "AI Agent Platform API v1");
+    options.RoutePrefix = "swagger";
+});
+
+// Редирект с корневого URL на Swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.MapControllers();
 
