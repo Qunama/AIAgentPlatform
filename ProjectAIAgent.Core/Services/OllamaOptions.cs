@@ -41,4 +41,7 @@ public class OllamaOptions
         ["simple"] = "qwen2.5-coder:7b-instruct",
         ["refactoring"] = "deepseek-coder-v2:16b-lite-instruct-q4_K_M"
     };
+
+    /// <summary>Модель для эмбеддингов (должна поддерживать embeddings capability)</summary>
+    public string EmbeddingModel { get; set; } = "nomic-embed-text";
 }
