@@ -2,23 +2,24 @@
 
 ## Начало работы
 
-### 1. Запуск инфраструктуры
+### 1. Запуск через Docker (рекомендуемый)
 
 ```bash
 cd local-infra
 docker compose up -d
 ```bash
 
-Убедитесь, что оба контейнера запущены:
+Убедитесь, что все контейнеры запущены:
 ```bash
 docker ps
-# Должны быть: ollama-server и qdrant
+# Должны быть: ollama-server, qdrant-server, aiagent-platform
 ```bash
 
 ### 2. Загрузка модели
 
 ```bash
 docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+docker compose restart agent
 ```bash
 
 Проверка:
@@ -26,9 +27,20 @@ docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
 docker exec -it ollama-server ollama list
 ```bash
 
-### 3. Указание проекта
+### 3. Запуск для разработки (без Docker для агента)
 
-Перед использованием агента укажите путь к .NET проекту, с которым он будет работать.
+```bash
+cd local-infra
+docker compose up -d ollama qdrant
+docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+cd ..
+cd ProjectAIAgent.Host
+dotnet run
+```bash
+
+### 4. Указание проекта
+
+Перед использованием агента укажите путь к .NET проекту.
 
 **Через CLI:**
 ```bash
@@ -47,7 +59,13 @@ curl -X POST http://localhost:5000/api/agent/set-project -H "Content-Type: appli
 }
 ```json
 
-### 4. Отправка запросов
+**В Docker:** путь монтируется через volume в docker-compose.yml:
+```yaml
+volumes:
+  - ../tests/ProjectAIAgent.Sandbox/SandboxApp:/app/project
+```yaml
+
+### 5. Отправка запросов
 
 **Интерактивный режим:**
 ```bash
@@ -113,6 +131,21 @@ http://localhost:5000/ — тёмная тема с логом в реально
 
 http://localhost:5000/swagger — интерактивная документация API.
 
+## Сборка Docker-образа
+
+Dockerfile находится в корне проекта. Сборка через Docker Compose:
+
+```bash
+cd local-infra
+docker compose build agent
+```bash
+
+Или напрямую:
+
+```bash
+docker build -t aiagent-platform .
+```bash
+
 ## Метрики
 
 Метрики собираются автоматически и доступны через:
@@ -139,6 +172,9 @@ docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
 
 ### Ошибка "No Git repository found"
 Инициализируйте Git в целевом проекте: `git init`
+
+### Docker не видит Dockerfile
+Dockerfile должен находиться в корне проекта (рядом с .sln файлом), а не в папке ProjectAIAgent.Host.
 
 ### Медленная работа
 - Модель qwen2.5-coder:7b-instruct требует ~8 ГБ RAM

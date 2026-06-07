@@ -1,0 +1,11 @@
+**/bin
+**/obj
+**/.vs
+**/.git
+**/node_modules
+**/.idea
+local-infra/data
+*.user
+*.suo
+*.cache
+TestResults

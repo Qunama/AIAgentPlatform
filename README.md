@@ -40,22 +40,24 @@ git clone https://github.com/your-username/AIAgentPlatform.git
 cd AIAgentPlatform
 ```bash
 
-### Запуск инфраструктуры
+### Запуск через Docker (рекомендуемый)
 
 ```bash
 cd local-infra
 docker compose up -d
-```bash
-
-### Загрузка модели
-
-```bash
 docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+docker compose restart agent
 ```bash
 
-### Запуск агента
+Агент доступен на http://localhost:5000/.
+
+### Запуск для разработки
 
 ```bash
+cd local-infra
+docker compose up -d ollama qdrant
+docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+cd ..
 cd ProjectAIAgent.Host
 dotnet run
 ```bash
@@ -113,6 +115,37 @@ http://localhost:5000/swagger — документация API.
 - **4 агента**: OrchestratorAgent, CodeEditorAgent, DocumentationAgent, ContextAgent
 - **7 инструментов**: read_file, write_file, project_structure, read_documentation, update_documentation, run_shell_command, git_diff
 - **4 фоновые службы**: AgentWorkerService, DocumentationIndexerService, DocumentationWatcherService, BuildValidationService
+
+## Структура проекта
+
+```bash
+AIAgentPlatform/
+├── AIAgentPlatform.sln
+├── Dockerfile                     # Docker-образ агента
+├── .dockerignore
+├── CONTRIBUTING.md
+├── README.md
+├── docs/
+│   └── USER_GUIDE.md
+├── local-infra/
+│   └── docker-compose.yml         # Ollama + Qdrant + Agent
+├── ProjectAIAgent.Host/           # Web Application
+│   ├── Program.cs
+│   ├── AgentWorkerService.cs
+│   ├── Controllers/
+│   ├── Hubs/
+│   ├── Pages/
+│   └── appsettings.json
+├── ProjectAIAgent.Core/           # Class Library
+│   ├── Agents/
+│   ├── Tools/
+│   ├── Services/
+│   ├── Models/
+│   └── Prompts/
+└── tests/
+    ├── ProjectAIAgent.Core.Tests/
+    └── ProjectAIAgent.Sandbox/
+```bash
 
 ## Тестирование
 
