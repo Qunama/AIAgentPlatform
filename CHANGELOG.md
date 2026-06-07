@@ -2,6 +2,28 @@
 
 All notable changes to AIAgentPlatform will be documented in this file.
 
+## [1.1.0] — 2026-06-07
+
+### Added
+- search_codebase — семантический поиск по исходному коду (Qdrant)
+- find_usages — поиск использований класса/метода
+- Предварительное планирование в оркестраторе
+- ChangePlan с отслеживанием прогресса
+- Многофайловые изменения с проверкой зависимостей
+- Валидация с извлечением файлов с ошибками
+- 3 специализированных промпта (refactoring, bugfix, feature)
+- Few-shot примеры во всех промптах
+- Автовыбор модели (7B/14B/16B) по запросу
+- VS Code расширение
+- Embedding-модель nomic-embed-text (768)
+- Коллекция project_docs_code для кода
+
+### Changed
+- Инструментов: 7 → 9
+- Промптов: 3 → 6
+- Моделей: 1 → 4 (включая embedding)
+- Qdrant VectorSize: 3584 → 768
+
 ## [1.0.1] — 2026-06-07
 
 ### Fixed
