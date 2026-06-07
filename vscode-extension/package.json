@@ -1,0 +1,61 @@
+{
+  "name": "aiagent-platform",
+  "displayName": "AI Agent Platform",
+  "description": "AI-агент для работы с .NET проектами. Отправляет запросы агенту и применяет изменения.",
+  "version": "1.0.0",
+  "publisher": "aiagent",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Machine Learning"],
+  "activationEvents": [
+    "onCommand:aiagent.sendRequest",
+    "onCommand:aiagent.applyChanges",
+    "onCommand:aiagent.showHistory",
+    "onCommand:aiagent.setProject"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiagent.sendRequest",
+        "title": "AI Agent: Send Request"
+      },
+      {
+        "command": "aiagent.applyChanges",
+        "title": "AI Agent: Apply Changes"
+      },
+      {
+        "command": "aiagent.showHistory",
+        "title": "AI Agent: Show History"
+      },
+      {
+        "command": "aiagent.setProject",
+        "title": "AI Agent: Set Project Path"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiagent.sendRequest",
+        "key": "ctrl+shift+a",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "AI Agent Platform",
+      "properties": {
+        "aiagent.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:5000",
+          "description": "URL агента"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.22.0"
+  }
+}
