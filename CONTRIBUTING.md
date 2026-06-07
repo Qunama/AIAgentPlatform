@@ -17,6 +17,7 @@
 
 ## Структура проекта
 
+- `.github/workflows/` — CI/CD пайплайн (сборка, тесты, публикация Docker-образа)
 - `ProjectAIAgent.Host/` — точка входа, API, CLI, Web UI
 - `ProjectAIAgent.Core/` — агенты, инструменты, сервисы
 - `tests/` — юнит-тесты и песочница

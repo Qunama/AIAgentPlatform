@@ -120,6 +120,9 @@ http://localhost:5000/swagger — документация API.
 
 ```bash
 AIAgentPlatform/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # CI/CD: сборка, тесты, Docker-образ
 ├── AIAgentPlatform.sln
 ├── Dockerfile                     # Docker-образ агента
 ├── .dockerignore
@@ -146,6 +149,18 @@ AIAgentPlatform/
     ├── ProjectAIAgent.Core.Tests/
     └── ProjectAIAgent.Sandbox/
 ```
+
+### Запуск через Docker Hub (рекомендуемый)
+
+```bash
+docker pull твой-username/aiagent-platform:latest
+cd local-infra
+docker compose up -d
+docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+docker compose restart agent
+```
+
+Агент доступен на http://localhost:5000/. Замени "твой-username" на свой логин Docker Hub.
 
 ## Тестирование
 

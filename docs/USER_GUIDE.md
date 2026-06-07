@@ -2,6 +2,26 @@
 
 ## Начало работы
 
+### Способ 1: Готовый Docker-образ (проще всего)
+
+```bash
+docker pull твой-username/aiagent-platform:latest
+cd local-infra
+docker compose up -d
+docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+docker compose restart agent
+```
+
+## Сборка Docker-образа
+
+Dockerfile находится в корне проекта. Образ автоматически собирается и публикуется в Docker Hub через GitHub Actions при каждом push в main/master.
+
+Для локальной сборки:
+
+```bash
+docker build -t aiagent-platform .
+```
+
 ### 1. Запуск через Docker (рекомендуемый)
 
 ```bash
