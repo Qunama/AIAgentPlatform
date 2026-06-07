@@ -142,6 +142,11 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 
 СТРУКТУРА РЕШЕНИЯ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 7)
 AIAgentPlatform/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # CI/CD: build, test, docker push
+├── Dockerfile                     # Docker-образ агента (в корне)
+├── .dockerignore
 ├── AIAgentPlatform.sln
 ├── local-infra/
 │   └── docker-compose.yml          # Ollama + Qdrant
