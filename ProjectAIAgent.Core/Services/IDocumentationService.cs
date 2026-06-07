@@ -36,4 +36,24 @@ public interface IDocumentationService
     /// <param name="rootPath">Корневая папка проекта</param>
     /// <returns>Список чанков с векторами, готовых для сохранения в Qdrant</returns>
     Task<List<DocumentChunk>> IndexDocumentationAsync(string rootPath);
+
+    /// <summary>
+    /// Находит все .cs файлы в проекте и разбивает их на чанки по классам и методам.
+    /// </summary>
+    Task<List<CodeChunk>> DiscoverCodeFilesAsync(string rootPath);
+
+    /// <summary>
+    /// Разбивает содержимое .cs файла на чанки по классам и методам.
+    /// </summary>
+    List<CodeChunk> ChunkCodeFile(string content, string filePath);
+
+    /// <summary>
+    /// Векторизует список чанков кода.
+    /// </summary>
+    Task EmbedCodeChunksAsync(List<CodeChunk> chunks);
+
+    /// <summary>
+    /// Полная индексация исходного кода.
+    /// </summary>
+    Task<List<CodeChunk>> IndexCodebaseAsync(string rootPath);
 }

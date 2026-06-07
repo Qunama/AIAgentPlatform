@@ -8,10 +8,6 @@ using ProjectAIAgent.Core.Services;
 
 namespace ProjectAIAgent.Host;
 
-/// <summary>
-/// Фоновая служба, которая при старте приложения индексирует документацию проекта
-/// и сохраняет чанки в Qdrant.
-/// </summary>
 public class DocumentationIndexerService : IHostedService
 {
     private readonly IServiceProvider _serviceProvider;
@@ -35,82 +31,72 @@ public class DocumentationIndexerService : IHostedService
     {
         var projectPath = _agentOptions.Value.ProjectPath;
 
-        if (string.IsNullOrWhiteSpace(projectPath))
+        if (string.IsNullOrWhiteSpace(projectPath) || !Directory.Exists(projectPath))
         {
-            _logger.LogWarning(
-                "ProjectPath is not configured. Skipping documentation indexing. " +
-                "Set 'Agent:ProjectPath' in appsettings.json.");
-            return;
-        }
-
-        if (!Directory.Exists(projectPath))
-        {
-            _logger.LogWarning(
-                "ProjectPath '{Path}' does not exist. Skipping documentation indexing.",
-                projectPath);
+            _logger.LogWarning("ProjectPath not configured or not found. Skipping indexing.");
             return;
         }
 
         try
         {
-            _logger.LogInformation("Starting documentation indexing for project: {Path}", projectPath);
-
             using var scope = _serviceProvider.CreateScope();
-
             var docService = scope.ServiceProvider.GetRequiredService<IDocumentationService>();
             var qdrantService = scope.ServiceProvider.GetRequiredService<IQdrantService>();
             var qdrantOpts = _qdrantOptions.Value;
 
-            // 1. Создать коллекцию в Qdrant, если её нет
-            await qdrantService.EnsureCollectionExistsAsync(
-                qdrantOpts.CollectionName,
-                qdrantOpts.VectorSize,
-                cancellationToken);
+            // === Индексация документации ===
+            _logger.LogInformation("Indexing documentation...");
+            await qdrantService.EnsureCollectionExistsAsync(qdrantOpts.CollectionName, qdrantOpts.VectorSize, cancellationToken);
 
-            // 2. Проиндексировать документацию
-            var chunks = await docService.IndexDocumentationAsync(projectPath);
-
-            if (chunks.Count == 0)
+            var docChunks = await docService.IndexDocumentationAsync(projectPath);
+            if (docChunks.Count > 0)
             {
-                _logger.LogInformation("No documentation files found in {Path}", projectPath);
-                return;
-            }
-
-            // 3. Очистить старые точки
-            await qdrantService.ClearCollectionAsync(qdrantOpts.CollectionName, cancellationToken);
-
-            // 4. Вставить новые точки
-            var points = chunks
-                .Where(c => c.Embedding != null)
-                .Select(c => new QdrantPoint
+                await qdrantService.ClearCollectionAsync(qdrantOpts.CollectionName, cancellationToken);
+                var docPoints = docChunks.Where(c => c.Embedding != null).Select(c => new QdrantPoint
                 {
-                    Id = c.Id,
-                    Vector = c.Embedding!,
+                    Id = c.Id, Vector = c.Embedding!,
                     Payload = new Dictionary<string, object>
                     {
-                        ["content"] = c.Content,
-                        ["file_path"] = c.FilePath,
-                        ["section"] = c.Section ?? "",
-                        ["chunk_index"] = c.ChunkIndex,
-                        ["last_modified"] = c.LastModified.ToString("O")
+                        ["content"] = c.Content, ["file_path"] = c.FilePath,
+                        ["section"] = c.Section ?? "", ["chunk_index"] = c.ChunkIndex
                     }
-                })
-                .ToList();
+                }).ToList();
+                await qdrantService.UpsertPointsAsync(qdrantOpts.CollectionName, docPoints, cancellationToken);
+                _logger.LogInformation("Documentation: {Count} chunks indexed", docPoints.Count);
+            }
 
-            await qdrantService.UpsertPointsAsync(qdrantOpts.CollectionName, points, cancellationToken);
+            // === Индексация исходного кода ===
+            _logger.LogInformation("Indexing source code...");
+            var codeCollection = qdrantOpts.CollectionName + "_code";
+            await qdrantService.EnsureCollectionExistsAsync(codeCollection, qdrantOpts.VectorSize, cancellationToken);
 
-            _logger.LogInformation(
-                "Documentation indexing complete. {Count} chunks saved to Qdrant collection '{Collection}'.",
-                points.Count, qdrantOpts.CollectionName);
+            var codeChunks = await docService.IndexCodebaseAsync(projectPath);
+            if (codeChunks.Count > 0)
+            {
+                await qdrantService.ClearCollectionAsync(codeCollection, cancellationToken);
+                var codePoints = codeChunks.Where(c => c.Embedding != null).Select(c => new QdrantPoint
+                {
+                    Id = c.Id, Vector = c.Embedding!,
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["content"] = c.Content, ["file_path"] = c.FilePath,
+                        ["namespace"] = c.Namespace ?? "", ["class_name"] = c.ClassName ?? "",
+                        ["method_name"] = c.MethodName ?? "", ["signature"] = c.Signature ?? "",
+                        ["start_line"] = c.StartLine, ["end_line"] = c.EndLine
+                    }
+                }).ToList();
+                await qdrantService.UpsertPointsAsync(codeCollection, codePoints, cancellationToken);
+                _logger.LogInformation("Source code: {Count} chunks indexed", codePoints.Count);
+            }
+
+            _logger.LogInformation("Indexing complete. Docs: {DocCount}, Code: {CodeCount}",
+                docChunks.Count, codeChunks.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to index documentation");
+            _logger.LogError(ex, "Indexing failed");
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
