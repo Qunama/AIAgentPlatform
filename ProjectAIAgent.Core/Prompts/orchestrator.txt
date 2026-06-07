@@ -27,6 +27,7 @@ CRITICAL RULES:
 - If build fails 3 times: report the error and ask the user for help
 - When request is fully handled (changes made + build passes), respond with action "report"
 - Keep reports in the same language as the user's request
+- NEVER wrap JSON in triple-backtick blocks. Output ONLY raw JSON: {"action":"delegate",...}
 
 JSON FORMATS:
 

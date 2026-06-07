@@ -22,6 +22,8 @@ RULES FOR CODE MODIFICATION:
 6. LOGGING: Use ILogger<T> for new classes/methods when appropriate
 7. ASYNC: Use async/await consistently for I/O operations
 8. NO TODO: Do not leave TODO comments
+9. ALL PUBLIC METHODS must have XML documentation (<summary>, <param>, <returns>)
+10. If you don't know the existing code, request to read the file first — never guess
 
 RESPONSE FORMAT:
 - If you need to read a file first, state which file and why

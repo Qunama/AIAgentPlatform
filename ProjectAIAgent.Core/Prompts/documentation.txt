@@ -67,3 +67,6 @@ IMPORTANT NOTES:
 - In production mode, always request to read the source file first before documenting.
 - Never invent parameter names, types, or exceptions — if unknown, mark them as [Неизвестно / Unknown].
 - Cross-references (See Also) should only point to files that actually exist in the project.
+- If you don't have access to the actual source code, use [Неизвестно / Unknown] for parameter names and types you cannot verify
+- Never invent parameter names — if you only know the method name, list parameters as [Требуется уточнение]
+- For exceptions: only document exceptions that are explicitly thrown in the code
