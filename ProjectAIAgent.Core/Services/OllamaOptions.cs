@@ -35,11 +35,13 @@ public class OllamaOptions
     public int TotalTimeoutSeconds { get; set; } = 300;
 
     /// <summary>Модели для разных типов задач</summary>
-    public Dictionary<string, string> ModelByTask { get; set; } = new()
+        public Dictionary<string, string> ModelByTask { get; set; } = new()
     {
         ["default"] = "qwen2.5-coder:14b-instruct-q4_K_M",
         ["simple"] = "qwen2.5-coder:7b-instruct",
-        ["refactoring"] = "deepseek-coder-v2:16b-lite-instruct-q4_K_M"
+        ["refactoring"] = "deepseek-coder-v2:16b-lite-instruct-q4_K_M",
+        ["bugfix"] = "qwen2.5-coder:14b-instruct-q4_K_M",
+        ["feature"] = "qwen2.5-coder:14b-instruct-q4_K_M"
     };
 
     /// <summary>Модель для эмбеддингов (должна поддерживать embeddings capability)</summary>

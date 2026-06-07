@@ -4,7 +4,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 
 МИССИЯ: Создать AI-агента на .NET 8 с локальной LLM, который получает запросы на естественном языке, самостоятельно вносит правки в .NET проект, ведёт и читает документацию, понимает общую картину работы.
 
-ТЕКУЩАЯ СТАДИЯ: Все 8 этапов завершены. Фаза 1 (индексация исходного кода, этапы 9-12) завершена. Фаза 2 (улучшение планирования, этапы 13-14) — следующая.
+ТЕКУЩАЯ СТАДИЯ: Все 8 этапов завершены. Фаза 1 (этапы 9-12) завершена. Фаза 2 (этапы 13-14) завершена. Фаза 3 (улучшение интеллекта, этапы 15-16) — в процессе.
 
 ═══════════════════════════════════════════════════════════
 
@@ -165,9 +165,12 @@ AIAgentPlatform/
 │   │   ├── ChangePlan.cs         # ChangeStep, PlanStatus, StepStatus
 │   │   └── CodeChunk.cs            # Чанк исходного кода
 │   ├── Prompts/
-│   │   ├── orchestrator.txt      # 9-шаговый workflow
+│   │   ├── orchestrator.txt      # 10-шаговый workflow с планированием
 │   │   ├── code-editor.txt       # C# 12, XML-документация
-│   │   └── documentation.txt     # RU/EN, [Неизвестно]
+│   │   ├── documentation.txt     # RU/EN, [Неизвестно]
+│   │   ├── refactoring.txt       # Безопасный рефакторинг, совместимость
+│   │   ├── bugfix.txt            # Минимальные исправления, edge cases
+│   │   └── feature.txt           # Новая функциональность, DI, логирование
 │   └── ProjectAIAgent.Core.csproj
 ├── tests/
 │   ├── ProjectAIAgent.Core.Tests/
@@ -193,7 +196,7 @@ AIAgentPlatform/
 КОМПОНЕНТЫ СИСТЕМЫ
 
 АГЕНТЫ (4):
-- OrchestratorAgent — главный оркестратор. Принимает запрос, получает контекст от ContextAgent, строит системный промпт с {TOOLS}, вызывает LLM, парсит JSON-ответы (ExtractActionPlanRobust), вызывает инструменты через ToolRegistry.ExecuteToolAsync. Цикл: Explore -> Read -> Write -> Validate -> Document -> Report. Защита от зацикливания (MaxIterations=10). Инжектит: ToolRegistry, ILlmService, ContextAgent, BuildValidationService, ReportService, MetricsService.
+- OrchestratorAgent — главный оркестратор. Принимает запрос, получает контекст от ContextAgent, строит системный промпт с {TOOLS}, вызывает LLM, парсит JSON-ответы (ExtractActionPlanRobust), вызывает инструменты через ToolRegistry.ExecuteToolAsync. Цикл: Explore -> Read -> Write -> Validate -> Document -> Report. Защита от зацикливания (MaxIterations=10). Инжектит: ToolRegistry, ILlmService, ContextAgent, BuildValidationService, ReportService, MetricsService. Выбирает модель (SelectModel) и промпт по ключевым словам: simple (7B), default/bugfix/feature (14B), refactoring (16B).
 - CodeEditorAgent — чтение/изменение файлов. Инструменты: ReadFileTool, WriteFileTool.
 - DocumentationAgent — работа с документацией. Инструменты: ReadDocumentationTool, UpdateDocumentationTool.
 - ContextAgent — управление контекстом (ProjectContext). Методы: SetProjectPath, CacheProjectStructure, RegisterFileModification, RegisterError, RecordInteraction, SetPhase, GetContextSummary, ResetErrors.
@@ -208,6 +211,14 @@ AIAgentPlatform/
 - git_diff — Git status/diff/log. Зависимости: LibGit2Sharp, IOptions<AgentOptions>.
 - search_codebase — семантический поиск по коду через Qdrant (коллекция project_docs_code). Зависимости: IOllamaEmbeddingClient, IQdrantService, IOptions<QdrantOptions>.
 - find_usages — поиск использований класса/метода во всех .cs файлах. Зависимости: IOptions<AgentOptions>.
+
+ПРОМПТЫ (6):
+- orchestrator.txt — оркестрация с предварительным планированием
+- code-editor.txt — редактирование кода (C# 12, XML-документация)
+- documentation.txt — документирование (RU/EN, запрет выдумывания)
+- refactoring.txt — безопасный рефакторинг с сохранением совместимости
+- bugfix.txt — минимальные исправления, проверка edge cases
+- feature.txt — новая функциональность с DI и логированием
 
 ФОНОВЫЕ СЛУЖБЫ (4):
 - AgentWorkerService (HostedService) — интерактивный цикл, выбор режима A/T.
@@ -342,6 +353,7 @@ CI/CD:
 Сборка: 0 ошибок, 0 предупреждений.
 Тесты: 30 юнит-тестов (xUnit + Moq), все проходят.
 Инструменты: 9 (все реализованы).
+Промпты: 6 (orchestrator.txt, code-editor.txt, documentation.txt, refactoring.txt, bugfix.txt, feature.txt).
 Агенты: 4 (все реализованы).
 Фоновые службы: 4.
 Метрики: собираются через MetricsService, отображаются в status и Web UI.
@@ -428,6 +440,10 @@ cd ProjectAIAgent.Host && dotnet run
 - Обновлён orchestrator.txt: search_codebase и find_usages в workflow.
 - Всего инструментов: 9. Всего агентов: 4. Всего фоновых служб: 4.
 
+ФАЗА 2: УЛУЧШЕНИЕ ПЛАНИРОВАНИЯ (ЭТАПЫ 13-14)
+- Этап 13: Многофайловые изменения. После write_file в .cs файл оркестратор предлагает find_usages для проверки зависимых мест.
+- Этап 14: Валидация с учётом зависимостей. BuildValidationService.ExtractFailedFiles извлекает конкретные файлы с ошибками из вывода dotnet build. При провале сборки оркестратор показывает файлы с ошибками и предлагает использовать find_usages для зависимого кода.
+
 ═══════════════════════════════════════════════════════════
 
 ГЛОБАЛЬНАЯ ЦЕЛЬ (NEXT-GEN)
@@ -455,15 +471,17 @@ cd ProjectAIAgent.Host && dotnet run
 - Обновлён orchestrator.txt: search_codebase и find_usages в workflow
 - Всего инструментов: 9 (read_file, write_file, project_structure, read_documentation, update_documentation, run_shell_command, git_diff, search_codebase, find_usages)
 
-ФАЗА 2: УЛУЧШЕНИЕ ПЛАНИРОВАНИЯ
-- Предварительный анализ: LLM получает семантический поиск по запросу до начала изменений
-- Формирование полного ChangePlan с учётом всех затронутых файлов
-- Многофайловые изменения с обновлением всех зависимых мест
+ФАЗА 2: УЛУЧШЕНИЕ ПЛАНИРОВАНИЯ — ЗАВЕРШЕНА
+- Предварительный анализ: search_codebase -> find_usages -> read_file перед изменениями
+- ChangePlan формируется из JSON-ответа LLM, шаги с отслеживанием прогресса
+- Многофайловые изменения: после write_file предлагается find_usages для проверки зависимых мест
+- Валидация с учётом зависимостей: ExtractFailedFiles извлекает файлы с ошибками сборки
 
-ФАЗА 3: УЛУЧШЕНИЕ ИНТЕЛЛЕКТА
-- Переход на более мощную модель (qwen2.5-coder:14b/32b или deepseek-coder-v2)
-- Специализированные промпты: refactoring.txt, bugfix.txt, feature.txt
-- Few-shot примеры в промптах
+ФАЗА 3: УЛУЧШЕНИЕ ИНТЕЛЛЕКТА — В ПРОЦЕССЕ
+- Переход на более мощные модели выполнен: 7B (simple), 14B (default/bugfix/feature), 16B (refactoring)
+- Специализированные промпты созданы: refactoring.txt, bugfix.txt, feature.txt
+- Этап 15 завершён: SelectModel выбирает модель и промпт по ключевым словам в запросе
+- Этап 16 (следующий): Few-shot примеры в промптах
 
 ФАЗА 4: ИНТЕГРАЦИЯ С IDE (опционально)
 - Расширение для VS Code / Visual Studio
@@ -494,3 +512,8 @@ cd ProjectAIAgent.Host && dotnet run
 - FileSystemWatcher: дебаунс 3 секунды, отключение через WatchDocumentation: false.
 - MetricsService: метрики доступны через API (status) и CLI (status).
 - Все инструменты регистрируются автоматически — достаточно добавить класс с [AgentTool] и IAgentTool.
+- Специализированные промпты выбираются автоматически по ключевым словам в запросе пользователя.
+- refactoring.txt используется для запросов с "рефакторинг", "перепиши", "выдели интерфейс".
+- bugfix.txt для "исправь", "почини", "ошибка", "баг".
+- feature.txt для "добавь", "создай", "реализуй".
+- ExtractFailedFiles извлекает файлы с ошибками из вывода dotnet build для целевой диагностики.

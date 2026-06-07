@@ -558,8 +558,18 @@ public class OrchestratorAgent : BaseAgent
 
         if (request.Contains("рефакторинг") || request.Contains("перепиши") ||
             request.Contains("оптимизируй") || request.Contains("restructure") ||
-            request.Contains("refactor"))
+            request.Contains("refactor") || request.Contains("выдели интерфейс"))
             return "refactoring";
+
+        if (request.Contains("исправь") || request.Contains("почини") ||
+            request.Contains("ошибка") || request.Contains("баг") ||
+            request.Contains("fix") || request.Contains("bug"))
+            return "bugfix";
+
+        if (request.Contains("добавь") || request.Contains("создай") ||
+            request.Contains("реализуй") || request.Contains("add") ||
+            request.Contains("create") || request.Contains("implement"))
+            return "feature";
 
         if (request.Contains("прочитай") || request.Contains("покажи") ||
             request.Contains("структуру") || request.Contains("статус") ||
