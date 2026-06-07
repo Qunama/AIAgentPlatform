@@ -235,7 +235,18 @@ public class OrchestratorAgent : BaseAgent
                     if (buildResult.Success)
                         conversationHistory.AppendLine("[USER]: Build succeeded! Show git diff, then report.");
                     else if (buildResult.ShouldRetry)
-                        conversationHistory.AppendLine("[USER]: Build failed. Fix errors and retry.");
+                    {
+                        var failedFiles = BuildValidationService.ExtractFailedFiles(buildResult.Errors);
+                        var filesHint = failedFiles.Count > 0 
+                            ? $"Errors in: {string.Join(", ", failedFiles)}. " 
+                            : "";
+                        
+                        conversationHistory.AppendLine("[USER]: Build failed. " +
+                            $"{filesHint}" +
+                            $"You have {buildResult.RemainingAttempts} attempts left. " +
+                            "If errors are in files you haven't modified, use find_usages to locate the code and read_file to understand it. " +
+                            "Then fix with write_file and run dotnet build again.");
+                    }
                     else
                         conversationHistory.AppendLine("[USER]: All build attempts exhausted. Report the failure.");
                     continue;

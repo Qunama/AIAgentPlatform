@@ -3,6 +3,7 @@ using System.Text;
 using CliWrap;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Text.RegularExpressions;
 
 namespace ProjectAIAgent.Core.Services;
 
@@ -126,6 +127,23 @@ public class BuildValidationService
         }
 
         return string.Join("\n", errorLines);
+    }
+
+    /// <summary>
+    /// Извлекает пути к файлам с ошибками из вывода сборки.
+    /// </summary>
+    public static List<string> ExtractFailedFiles(string stdErr)
+    {
+        var files = new List<string>();
+        if (string.IsNullOrWhiteSpace(stdErr)) return files;
+
+        var matches = Regex.Matches(stdErr, @"([^\s(]+\.cs)\(\d+");
+        foreach (Match match in matches)
+        {
+            var file = match.Groups[1].Value;
+            if (!files.Contains(file)) files.Add(file);
+        }
+        return files;
     }
 
     public void Reset()
