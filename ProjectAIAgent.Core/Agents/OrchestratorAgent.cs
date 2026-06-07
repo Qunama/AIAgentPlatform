@@ -100,9 +100,11 @@ public class OrchestratorAgent : BaseAgent
             await SendPhaseUpdateAsync(WorkPhase.Executing);
             
             llmCallCount++;
+            var model = SelectModel(iteration == 1 ? userRequest : "default");
             var llmResponse = await _llmService.GenerateAsync(
                 systemPromptFinal,
                 conversationHistory.ToString(),
+                model,
                 CancellationToken.None);
             
             Logger.LogDebug("LLM response ({Length} chars): {Preview}", 
@@ -419,5 +421,26 @@ public class OrchestratorAgent : BaseAgent
             }
         }
         return args;
+    }
+
+    /// <summary>
+    /// Выбирает модель в зависимости от запроса пользователя.
+    /// </summary>
+    private string SelectModel(string userRequest)
+    {
+        var request = userRequest.ToLowerInvariant();
+
+        if (request.Contains("рефакторинг") || request.Contains("перепиши") ||
+            request.Contains("оптимизируй") || request.Contains("restructure") ||
+            request.Contains("refactor"))
+            return "refactoring";
+
+        if (request.Contains("прочитай") || request.Contains("покажи") ||
+            request.Contains("структуру") || request.Contains("статус") ||
+            request.Contains("read") || request.Contains("show") ||
+            request.Contains("status"))
+            return "simple";
+
+        return "default";
     }
 }

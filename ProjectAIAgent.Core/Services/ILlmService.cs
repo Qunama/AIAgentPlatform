@@ -19,4 +19,14 @@ public interface ILlmService
         string systemPrompt,
         string userMessage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Генерация с указанием конкретной модели.
+    /// </summary>
+    /// <param name="model">Название модели или ключ из ModelByTask (simple/default/refactoring)</param>
+    Task<string> GenerateAsync(
+        string systemPrompt,
+        string userMessage,
+        string model,
+        CancellationToken cancellationToken = default);
 }

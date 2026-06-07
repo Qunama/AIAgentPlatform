@@ -10,8 +10,8 @@ public class OllamaOptions
     /// <summary>Базовый URL Ollama API (по умолчанию http://localhost:11434)</summary>
     public string BaseUrl { get; set; } = "http://localhost:11434";
 
-    /// <summary>Название модели (например, qwen2.5-coder:7b-instruct)</summary>
-    public string Model { get; set; } = "qwen2.5-coder:7b-instruct";
+    /// <summary>Название модели (например, qwen2.5-coder:14b-instruct-q4_K_M)</summary>
+    public string Model { get; set; } = "qwen2.5-coder:14b-instruct-q4_K_M";
 
     /// <summary>Максимальное количество токенов в ответе</summary>
     public int MaxTokens { get; set; } = 4096;
@@ -33,4 +33,12 @@ public class OllamaOptions
 
     /// <summary>Общий таймаут на все попытки в секундах</summary>
     public int TotalTimeoutSeconds { get; set; } = 300;
+
+    /// <summary>Модели для разных типов задач</summary>
+    public Dictionary<string, string> ModelByTask { get; set; } = new()
+    {
+        ["default"] = "qwen2.5-coder:14b-instruct-q4_K_M",
+        ["simple"] = "qwen2.5-coder:7b-instruct",
+        ["refactoring"] = "deepseek-coder-v2:16b-lite-instruct-q4_K_M"
+    };
 }
