@@ -43,7 +43,7 @@ docker compose up -d ollama qdrant
 docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
 cd ../ProjectAIAgent.Host
 dotnet run
-```bash
+```
 
 ### CLI-команды
 
@@ -53,7 +53,7 @@ dotnet run -- request "Добавь метод для валидации email"
 dotnet run -- status
 dotnet run -- history
 dotnet run -- docs query "настройка логирования"
-```bash
+```
 
 ## Конфигурация
 
