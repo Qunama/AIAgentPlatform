@@ -84,9 +84,12 @@ public class OrchestratorAgent : BaseAgent
         var conversationHistory = new StringBuilder();
         conversationHistory.AppendLine($"[USER REQUEST]: {userRequest}");
         conversationHistory.AppendLine($"[PROJECT CONTEXT]: {contextSummary}");
-        conversationHistory.AppendLine("[INSTRUCTION]: Analyze the request. " +
-            "If code changes are needed: explore structure -> read files -> make changes -> run 'dotnet build'. " +
-            "If build fails, fix errors and retry. After successful build, report. Start with the first tool call.");
+        conversationHistory.AppendLine("[INSTRUCTION]: This is the PLANNING phase. " +
+            "Before making ANY changes, you MUST:\n" +
+            "1. Use search_codebase to find relevant code for the user's request\n" +
+            "2. Use find_usages to see where the affected code is used\n" +
+            "3. Use read_file to understand the current implementation\n" +
+            "ONLY then propose changes. Start with search_codebase.");
         
         var iteration = 0;
         var buildAttemptCount = 0;
@@ -144,6 +147,15 @@ public class OrchestratorAgent : BaseAgent
                 break;
             }
             
+            if (action == "plan" && actionPlan.TryGetValue("plan", out var planObj))
+            {
+                // LLM вернула план действий — выполняем шаги последовательно
+                var plan = planObj as System.Text.Json.JsonElement?;
+                conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
+                conversationHistory.AppendLine("[USER]: Execute the plan step by step. Start with the first tool call.");
+                continue;
+            }
+
             if (action == "delegate" || action == "plan")
             {
                 var toolName = actionPlan.TryGetValue("tool", out var t) ? t?.ToString() : "unknown";
@@ -213,8 +225,15 @@ public class OrchestratorAgent : BaseAgent
                     conversationHistory.AppendLine("[USER]: File modified. Run 'dotnet build' to validate.");
                 else if (toolName == "run_shell_command")
                     conversationHistory.AppendLine("[USER]: Command executed. Proceed or fix errors.");
+                else if (toolName == "search_codebase" || toolName == "find_usages")
+                {
+                    conversationHistory.AppendLine("[USER]: Good. Now use read_file to examine the files found. " +
+                        "Then plan the changes. Respond ONLY with JSON.");
+                }
                 else
+                {
                     conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? Respond ONLY with JSON.");
+                }
                 continue;
             }
             
