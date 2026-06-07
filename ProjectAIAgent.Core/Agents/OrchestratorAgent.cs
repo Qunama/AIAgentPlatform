@@ -20,9 +20,9 @@ public class OrchestratorAgent : BaseAgent
     private readonly ContextAgent _contextAgent;
     private readonly BuildValidationService _buildValidation;
     private readonly ReportService _reportService;
+    private readonly MetricsService _metricsService;
     private const int MaxIterations = 10;
     
-    // Опциональный сервис SignalR (может быть null в консольном режиме)
     private readonly object? _signalRService;
     
     public OrchestratorAgent(
@@ -32,6 +32,7 @@ public class OrchestratorAgent : BaseAgent
         ContextAgent contextAgent,
         BuildValidationService buildValidation,
         ReportService reportService,
+        MetricsService metricsService,
         ILlmService? llmService = null)
         : base(logger, serviceProvider)
     {
@@ -39,9 +40,9 @@ public class OrchestratorAgent : BaseAgent
         _contextAgent = contextAgent ?? throw new ArgumentNullException(nameof(contextAgent));
         _buildValidation = buildValidation ?? throw new ArgumentNullException(nameof(buildValidation));
         _reportService = reportService ?? throw new ArgumentNullException(nameof(reportService));
+        _metricsService = metricsService ?? throw new ArgumentNullException(nameof(metricsService));
         _llmService = llmService;
         
-        // Пытаемся получить SignalRLoggingService (может отсутствовать в консольном режиме)
         var signalRType = Type.GetType("ProjectAIAgent.Host.SignalRLoggingService, ProjectAIAgent.Host", throwOnError: false);
         _signalRService = signalRType != null ? serviceProvider.GetService(signalRType) : null;
     }
@@ -56,6 +57,8 @@ public class OrchestratorAgent : BaseAgent
         var validationResult = string.Empty;
         bool success = false;
         string finalMessage = string.Empty;
+        bool buildAttempted = false;
+        bool buildSuccess = false;
         
         Logger.LogInformation("Orchestrator received request: {Request}", userRequest);
         
@@ -150,6 +153,7 @@ public class OrchestratorAgent : BaseAgent
                     cmd?.ToString()?.Contains("dotnet build") == true)
                 {
                     buildAttemptCount++;
+                    buildAttempted = true;
                     _contextAgent.SetPhase(WorkPhase.Validating);
                     await SendPhaseUpdateAsync(WorkPhase.Validating);
                     
@@ -158,6 +162,7 @@ public class OrchestratorAgent : BaseAgent
                         projectPath = Directory.GetCurrentDirectory();
                     
                     var buildResult = await _buildValidation.BuildAsync(projectPath);
+                    buildSuccess = buildResult.Success;
                     
                     await SendBuildResultAsync(buildResult.Success, buildResult.AttemptNumber, buildResult.GetSummary());
                     
@@ -173,18 +178,11 @@ public class OrchestratorAgent : BaseAgent
                     conversationHistory.AppendLine(buildResult.GetSummary());
                     
                     if (buildResult.Success)
-                    {
                         conversationHistory.AppendLine("[USER]: Build succeeded! Show git diff, then report.");
-                    }
                     else if (buildResult.ShouldRetry)
-                    {
-                        conversationHistory.AppendLine("[USER]: Build failed. " +
-                            $"You have {buildResult.RemainingAttempts} attempts left. Fix the errors and retry.");
-                    }
+                        conversationHistory.AppendLine("[USER]: Build failed. Fix errors and retry.");
                     else
-                    {
                         conversationHistory.AppendLine("[USER]: All build attempts exhausted. Report the failure.");
-                    }
                     continue;
                 }
                 
@@ -210,17 +208,11 @@ public class OrchestratorAgent : BaseAgent
                 conversationHistory.AppendLine(toolResult);
                 
                 if (toolSuccess && (toolName == "write_file" || toolName == "update_documentation"))
-                {
                     conversationHistory.AppendLine("[USER]: File modified. Run 'dotnet build' to validate.");
-                }
                 else if (toolName == "run_shell_command")
-                {
                     conversationHistory.AppendLine("[USER]: Command executed. Proceed or fix errors.");
-                }
                 else
-                {
                     conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? Respond ONLY with JSON.");
-                }
                 continue;
             }
             
@@ -242,6 +234,21 @@ public class OrchestratorAgent : BaseAgent
         _contextAgent.SetPhase(WorkPhase.Idle);
         await SendPhaseUpdateAsync(WorkPhase.Idle);
         
+        // Запись метрик
+        var duration = DateTime.UtcNow - startedAt;
+        _metricsService.Record(new RequestMetrics
+        {
+            Request = userRequest,
+            Success = success,
+            DurationMs = duration.TotalMilliseconds,
+            LlmCallCount = llmCallCount,
+            ToolCallCount = toolCallCount,
+            ToolsUsed = toolsUsed,
+            BuildAttempted = buildAttempted,
+            BuildSuccess = buildSuccess,
+            ErrorCount = errors.Count
+        });
+        
         var modifiedFiles = _contextAgent.GetContext().ModifiedFiles;
         
         var reportData = new ReportData
@@ -253,7 +260,7 @@ public class OrchestratorAgent : BaseAgent
             ValidationResult = string.IsNullOrWhiteSpace(validationResult) ? null : validationResult,
             Errors = errors,
             ToolsUsed = toolsUsed,
-            Duration = DateTime.UtcNow - startedAt,
+            Duration = duration,
             LlmCallCount = llmCallCount,
             ToolCallCount = toolCallCount
         };
@@ -264,8 +271,7 @@ public class OrchestratorAgent : BaseAgent
         return report;
     }
     
-    // Приватные методы для SignalR (безопасно вызываются через reflection-подобный паттерн)
-    
+    // Остальные методы без изменений
     private async Task SendPhaseUpdateAsync(WorkPhase phase)
     {
         if (_signalRService == null) return;
@@ -275,8 +281,7 @@ public class OrchestratorAgent : BaseAgent
             if (method != null)
             {
                 var task = method.Invoke(_signalRService, new object[] { phase }) as Task;
-                if (task != null)
-                    await task;
+                if (task != null) await task;
             }
         }
         catch { }
@@ -291,8 +296,7 @@ public class OrchestratorAgent : BaseAgent
             if (method != null)
             {
                 var task = method.Invoke(_signalRService, new object?[] { toolName, success, summary }) as Task;
-                if (task != null)
-                    await task;
+                if (task != null) await task;
             }
         }
         catch { }
@@ -307,8 +311,7 @@ public class OrchestratorAgent : BaseAgent
             if (method != null)
             {
                 var task = method.Invoke(_signalRService, new object?[] { success, attempt, summary }) as Task;
-                if (task != null)
-                    await task;
+                if (task != null) await task;
             }
         }
         catch { }
@@ -323,8 +326,7 @@ public class OrchestratorAgent : BaseAgent
             if (method != null)
             {
                 var task = method.Invoke(_signalRService, new object?[] { success, report }) as Task;
-                if (task != null)
-                    await task;
+                if (task != null) await task;
             }
         }
         catch { }
@@ -335,10 +337,8 @@ public class OrchestratorAgent : BaseAgent
         var prompt = await GetSystemPromptAsync();
         var toolsDesc = _toolRegistry.GetToolsDescription();
         prompt = prompt.Replace("{TOOLS}", toolsDesc);
-        
         if (!string.IsNullOrWhiteSpace(contextSummary))
             prompt += $"\n\n## Current Project Context\n{contextSummary}";
-        
         return prompt;
     }
     
@@ -360,16 +360,14 @@ public class OrchestratorAgent : BaseAgent
         foreach (var block in codeBlocks)
         {
             var plan = LlmResponseParser.ExtractActionPlan(block);
-            if (plan != null && plan.ContainsKey("action"))
-                return plan;
+            if (plan != null && plan.ContainsKey("action")) return plan;
         }
         return LlmResponseParser.ExtractActionPlan(llmResponse);
     }
     
     private static string? TryGetStringField(Dictionary<string, object> dict, string key)
     {
-        if (dict.TryGetValue(key, out var value) && value != null)
-            return value.ToString();
+        if (dict.TryGetValue(key, out var value) && value != null) return value.ToString();
         return null;
     }
     
@@ -379,22 +377,16 @@ public class OrchestratorAgent : BaseAgent
         {
             if (!actionPlan.TryGetValue("tool", out var toolObj) || toolObj == null)
                 return "Error: 'tool' field is missing.";
-            
             var toolName = toolObj.ToString()!;
             var args = ParseArgs(actionPlan);
-            
             Logger.LogInformation("Executing tool: {ToolName} with args: {@Args}", toolName, args);
-            
             var result = await _toolRegistry.ExecuteToolAsync(toolName, args);
-            
             if (result.Success)
             {
                 var output = result.Output ?? "No output";
-                if (output.Length > 3000)
-                    output = output[..3000] + $"\n... [truncated, total {output.Length} chars]";
+                if (output.Length > 3000) output = output[..3000] + $"\n... [truncated, total {output.Length} chars]";
                 return $"Success: {output}";
             }
-            
             return $"Error: {result.Error}";
         }
         catch (Exception ex)
@@ -407,14 +399,10 @@ public class OrchestratorAgent : BaseAgent
     private static Dictionary<string, object> ParseArgs(Dictionary<string, object> actionPlan)
     {
         var args = new Dictionary<string, object>();
-        
-        if (!actionPlan.TryGetValue("args", out var argsObj) || argsObj == null)
-            return args;
-        
+        if (!actionPlan.TryGetValue("args", out var argsObj) || argsObj == null) return args;
         if (argsObj is Dictionary<string, object> argsDict)
         {
-            foreach (var kvp in argsDict)
-                args[kvp.Key] = kvp.Value;
+            foreach (var kvp in argsDict) args[kvp.Key] = kvp.Value;
         }
         else if (argsObj is JsonElement argsElement && argsElement.ValueKind == JsonValueKind.Object)
         {
@@ -430,7 +418,6 @@ public class OrchestratorAgent : BaseAgent
                 };
             }
         }
-        
         return args;
     }
 }

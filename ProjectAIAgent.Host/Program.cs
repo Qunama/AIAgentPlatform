@@ -38,6 +38,7 @@ builder.Services.AddHttpClient<ProjectAIAgent.Core.Services.IOllamaApiClient, Ol
 builder.Services.AddSingleton<ILlmService, LlmService>();
 builder.Services.AddSingleton<BuildValidationService>();
 builder.Services.AddSingleton<ReportService>();
+builder.Services.AddSingleton<MetricsService>();
 
 // ==========================================
 // 4. СЕРВИСЫ ДОКУМЕНТАЦИИ И ЭМБЕДДИНГОВ
