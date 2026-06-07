@@ -168,9 +168,9 @@ AIAgentPlatform/
 │   │   ├── orchestrator.txt      # 10-шаговый workflow с планированием
 │   │   ├── code-editor.txt       # C# 12, XML-документация
 │   │   ├── documentation.txt     # RU/EN, [Неизвестно]
-│   │   ├── refactoring.txt       # Безопасный рефакторинг, совместимость
-│   │   ├── bugfix.txt            # Минимальные исправления, edge cases
-│   │   └── feature.txt           # Новая функциональность, DI, логирование
+│   │   ├── refactoring.txt       # Рефакторинг + 2 few-shot примера
+│   │   ├── bugfix.txt            # Исправления + 3 few-shot примера
+│   │   └── feature.txt           # Функциональность + 2 few-shot примера
 │   └── ProjectAIAgent.Core.csproj
 ├── tests/
 │   ├── ProjectAIAgent.Core.Tests/
@@ -353,7 +353,7 @@ CI/CD:
 Сборка: 0 ошибок, 0 предупреждений.
 Тесты: 30 юнит-тестов (xUnit + Moq), все проходят.
 Инструменты: 9 (все реализованы).
-Промпты: 6 (orchestrator.txt, code-editor.txt, documentation.txt, refactoring.txt, bugfix.txt, feature.txt).
+Промпты: 6, все с few-shot примерами.
 Агенты: 4 (все реализованы).
 Фоновые службы: 4.
 Метрики: собираются через MetricsService, отображаются в status и Web UI.
@@ -477,11 +477,12 @@ cd ProjectAIAgent.Host && dotnet run
 - Многофайловые изменения: после write_file предлагается find_usages для проверки зависимых мест
 - Валидация с учётом зависимостей: ExtractFailedFiles извлекает файлы с ошибками сборки
 
-ФАЗА 3: УЛУЧШЕНИЕ ИНТЕЛЛЕКТА — В ПРОЦЕССЕ
-- Переход на более мощные модели выполнен: 7B (simple), 14B (default/bugfix/feature), 16B (refactoring)
-- Специализированные промпты созданы: refactoring.txt, bugfix.txt, feature.txt
-- Этап 15 завершён: SelectModel выбирает модель и промпт по ключевым словам в запросе
-- Этап 16 (следующий): Few-shot примеры в промптах
+ФАЗА 3: УЛУЧШЕНИЕ ИНТЕЛЛЕКТА — ЗАВЕРШЕНА
+- Модели: 7B (simple), 14B (default/bugfix/feature), 16B (refactoring)
+- Специализированные промпты: refactoring.txt, bugfix.txt, feature.txt
+- SelectModel выбирает модель и промпт по ключевым словам в запросе
+- Few-shot примеры (2-3 на промпт) с полным циклом: запрос -> шаги -> результат
+- orchestrator.txt: complete workflow example (search->find->read->plan->build->report)
 
 ФАЗА 4: ИНТЕГРАЦИЯ С IDE (опционально)
 - Расширение для VS Code / Visual Studio
