@@ -280,7 +280,23 @@ public class OrchestratorAgent : BaseAgent
                 conversationHistory.AppendLine(toolResult);
                 
                 if (toolSuccess && (toolName == "write_file" || toolName == "update_documentation"))
-                    conversationHistory.AppendLine("[USER]: File modified. Run 'dotnet build' to validate.");
+                {
+                    // Если изменили .cs файл — предлагаем проверить usages
+                    if (toolName == "write_file" && actionPlan.TryGetValue("args", out var wArgs) && 
+                        wArgs is Dictionary<string, object> wDict &&
+                        wDict.TryGetValue("path", out var pathObj) &&
+                        pathObj?.ToString()?.EndsWith(".cs") == true)
+                    {
+                        var fileName = Path.GetFileNameWithoutExtension(pathObj.ToString());
+                        conversationHistory.AppendLine($"[USER]: .cs file modified. " +
+                            $"Run find_usages for key methods in '{fileName}' to check if callers need updating. " +
+                            $"Then run 'dotnet build' to validate.");
+                    }
+                    else
+                    {
+                        conversationHistory.AppendLine("[USER]: File modified. Run 'dotnet build' to validate.");
+                    }
+                }
                 else if (toolName == "run_shell_command")
                     conversationHistory.AppendLine("[USER]: Command executed. Proceed or fix errors.");
                 else if (toolName == "search_codebase" || toolName == "find_usages")

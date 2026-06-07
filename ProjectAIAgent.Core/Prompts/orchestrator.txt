@@ -31,6 +31,8 @@ CRITICAL RULES:
 - Keep reports in the same language as the user's request
 - NEVER wrap JSON in triple-backtick blocks. Output ONLY raw JSON: {"action":"delegate",...}
 - For find_usages: use BEFORE modifying a method/class to see where it's called. This prevents breaking changes.
+- After modifying a .cs file, use find_usages to check if callers need updating. Update all affected files.
+- When changing a method signature, find all usages and update each caller with the new signature.
 
 JSON FORMATS:
 

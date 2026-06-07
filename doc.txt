@@ -4,7 +4,7 @@ AIAgentPlatform — AI-агент для работы с проектами (.NE
 
 МИССИЯ: Создать AI-агента на .NET 8 с локальной LLM, который получает запросы на естественном языке, самостоятельно вносит правки в .NET проект, ведёт и читает документацию, понимает общую картину работы.
 
-ТЕКУЩАЯ СТАДИЯ: Этапы 1-8 завершены. Проект готов к использованию.
+ТЕКУЩАЯ СТАДИЯ: Все 8 этапов завершены. Фаза 1 (индексация исходного кода, этапы 9-12) завершена. Фаза 2 (улучшение планирования, этапы 13-14) — следующая.
 
 ═══════════════════════════════════════════════════════════
 
@@ -60,7 +60,7 @@ PROJECTAIAGENT.HOST (Web Application, бывший Worker Service):
 
 PROJECTAIAGENT.CORE (Class Library):
 - Агенты: OrchestratorAgent, CodeEditorAgent, DocumentationAgent, ContextAgent.
-- Инструменты (IAgentTool): 7 шт., авторегистрация через [AgentTool] и AddAgentTools.
+- Инструменты (IAgentTool): 9 шт., авторегистрация через [AgentTool] и AddAgentTools.
 - Сервисы: LlmService, LlmResponseParser, DocumentationService, BuildValidationService, ReportService, MetricsService, PromptLoader.
 - Модели: DocumentChunk, ProjectContext, ChangePlan, RequestMetrics.
 - Системные промпты: orchestrator.txt, code-editor.txt, documentation.txt (в Core/Prompts/).
@@ -72,7 +72,7 @@ PROJECTAIAGENT.CORE (Class Library):
 3. Прямые HTTP-вызовы к Ollama /api/generate и /api/embeddings (OllamaSharp только для моделей).
 4. Semantic Kernel только для Memory (Этап 4).
 5. Собственная оркестрация (AgentWorkerService + OrchestratorAgent), не Microsoft.Agents.Hosting.
-6. Qdrant как векторное хранилище (3584 измерения, Cosine distance, коллекция project_docs).
+6. Qdrant как векторное хранилище (768 измерений, Cosine distance, коллекции project_docs и project_docs_code).
 7. Git через LibGit2Sharp для контроля версий изменений.
 8. Обязательная валидация dotnet build после изменений (BuildValidationService, до 3 ретраев).
 9. Tool-based архитектура с авторегистрацией через рефлексию.
@@ -206,8 +206,8 @@ AIAgentPlatform/
 - update_documentation — обновление/создание секций с реиндексацией. Зависимости: IDocumentationService, IOllamaEmbeddingClient, IQdrantService, IOptions<AgentOptions>, IOptions<QdrantOptions>.
 - run_shell_command — выполнение команд (белый список: dotnet, git, npm, docker, echo, dir, ls, cat, type). Зависимости: CliWrap, IOptions<AgentOptions>.
 - git_diff — Git status/diff/log. Зависимости: LibGit2Sharp, IOptions<AgentOptions>.
-- search_codebase
-- find_usages
+- search_codebase — семантический поиск по коду через Qdrant (коллекция project_docs_code). Зависимости: IOllamaEmbeddingClient, IQdrantService, IOptions<QdrantOptions>.
+- find_usages — поиск использований класса/метода во всех .cs файлах. Зависимости: IOptions<AgentOptions>.
 
 ФОНОВЫЕ СЛУЖБЫ (4):
 - AgentWorkerService (HostedService) — интерактивный цикл, выбор режима A/T.
@@ -237,7 +237,7 @@ AIAgentPlatform/
 {
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
-    "Model": "qwen2.5-coder:7b-instruct",
+    "Model": "qwen2.5-coder:14b-instruct-q4_K_M",
     "MaxTokens": 4096,
     "Temperature": 0.2,
     "TopP": 0.9,
@@ -289,17 +289,19 @@ AIAgentPlatform/
 ТИПИЧНЫЙ WORKFLOW ОРКЕСТРАЦИИ
 
 1. Пользователь отправляет запрос: "Добавь метод Multiply в Calculator".
-2. ContextAgent предоставляет сводку контекста (ProjectContext.GetContextSummary).
-3. OrchestratorAgent формирует системный промпт с {TOOLS} и контекстом.
-4. LLM возвращает JSON: {"action":"delegate","tool":"project_structure","args":{"path":"."}}.
-5. ExtractActionPlanRobust парсит JSON, ExecuteToolFromPlan вызывает инструмент.
-6. Результат добавляется в conversationHistory (StringBuilder).
-7. Цикл повторяется: read_file -> write_file -> run_shell_command (dotnet build).
-8. BuildValidationService выполняет сборку, при ошибке — до 3 ретраев.
-9. При успехе: git_diff -> report.
-10. ContextAgent записывает взаимодействие в историю.
-11. MetricsService записывает метрики запроса.
-12. ReportService генерирует форматированный отчёт.
+2. ContextAgent предоставляет сводку контекста.
+3. Оркестратор начинает фазу планирования: search_codebase -> find_usages -> read_file.
+4. LLM формирует план (action: "plan") со списком шагов.
+5. ChangePlan наполняется шагами, выполняется с отслеживанием прогресса.
+6. Каждый шаг: LLM возвращает delegate с нужным инструментом.
+7. ExtractActionPlanRobust парсит JSON, ExecuteToolFromPlan вызывает инструмент.
+8. Результат добавляется в conversationHistory (StringBuilder).
+9. Цикл повторяется: read_file -> write_file -> run_shell_command (dotnet build).
+10. BuildValidationService выполняет сборку, при ошибке — до 3 ретраев.
+11. При успехе: git_diff -> report.
+12. ContextAgent записывает взаимодействие в историю.
+13. MetricsService записывает метрики запроса.
+14. ReportService генерирует форматированный отчёт.
 
 ═══════════════════════════════════════════════════════════
 
@@ -307,7 +309,7 @@ AIAgentPlatform/
 
 ИНФРАСТРУКТУРА:
 - Ollama (локальная LLM, qwen2.5-coder:7b-instruct)
-- Qdrant (векторная БД, 3584 измерения, Cosine)
+- Qdrant (векторная БД, 768 измерений, Cosine)
 - Docker Compose (3 сервиса: ollama, qdrant, agent)
 
 .NET (основные пакеты):
@@ -339,7 +341,7 @@ CI/CD:
 
 Сборка: 0 ошибок, 0 предупреждений.
 Тесты: 30 юнит-тестов (xUnit + Moq), все проходят.
-Инструменты: 7 (все реализованы и протестированы).
+Инструменты: 9 (все реализованы).
 Агенты: 4 (все реализованы).
 Фоновые службы: 4.
 Метрики: собираются через MetricsService, отображаются в status и Web UI.
@@ -474,7 +476,12 @@ cd ProjectAIAgent.Host && dotnet run
 ВАЖНЫЕ ЗАМЕТКИ
 
 - Модель qwen2.5-coder:7b-instruct требует ~8 ГБ RAM. Можно заменить в appsettings.json.
-- Qdrant: вектор 3584 (embedding_length модели), Cosine distance.
+- Qdrant: вектор 768 (embedding_length nomic-embed-text), Cosine distance.
+- EmbeddingModel: nomic-embed-text. qwen2.5-coder не поддерживает embeddings capability.
+- Ollama должна быть запущена с OLLAMA_EMBEDDINGS=1 в docker-compose.yml.
+- Поиск по коду: коллекция project_docs_code (отдельно от project_docs).
+- При выборе модели: первая итерация — модель по задаче, остальные — default (14B).
+- FindUsagesTool исключает bin/obj/.git директории при поиске.
 - Semantic Kernel используется только для Memory.
 - Microsoft.Agents.Hosting исключён — собственная оркестрация.
 - Dockerfile в корне проекта (рядом с .sln), не в ProjectAIAgent.Host/.
