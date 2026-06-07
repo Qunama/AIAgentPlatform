@@ -2,6 +2,12 @@
 
 All notable changes to AIAgentPlatform will be documented in this file.
 
+## [1.0.1] — 2026-06-07
+
+### Fixed
+- 300% CPU usage in Docker container (AgentWorkerService interactive loop without stdin)
+- Ollama healthcheck failing due to missing curl in container
+
 ## [1.0.0] — 2026-06-07
 
 ### Added
