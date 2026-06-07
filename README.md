@@ -170,6 +170,19 @@ dotnet test
 
 30 юнит-тестов (xUnit + Moq) для инструментов и сервисов. Тестовый проект-песочница в `tests/ProjectAIAgent.Sandbox/`.
 
+## Релизы
+
+Готовые сборки доступны на [странице релизов](https://github.com/Qunama/AIAgentPlatform/releases).
+
+| Платформа | Файл |
+|-----------|------|
+| Windows x64 | `aiagent-platform-win-x64.zip` |
+| Linux x64 | `aiagent-platform-linux-x64.zip` |
+
+Docker-образ: `docker pull твой-username/aiagent-platform:latest`
+
+История изменений: [CHANGELOG.md](CHANGELOG.md)
+
 ## Лицензия
 
 MIT

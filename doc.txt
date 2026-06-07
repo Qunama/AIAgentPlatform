@@ -1,192 +1,148 @@
 AIAgentPlatform — AI-агент для работы с проектами (.NET 8)
 
-МИССИЯ ПРОЕКТА
-Создать AI-агента на .NET 8, который получает запросы на естественном языке, самостоятельно вносит правки в указанный пользователем .NET проект, автоматически ведёт и читает документацию, понимая общую картину работы.
+МАНИФЕСТ ПРОЕКТА
 
-ТЕКУЩАЯ СТАДИЯ: Этап 1 завершён. Этап 2 завершён. Этап 3 завершён. Этап 4 завершён. Этап 5 завершён. Этап 6 завершён. Этап 7 завершён. Этап 8 — следующий.
+МИССИЯ: Создать AI-агента на .NET 8 с локальной LLM, который получает запросы на естественном языке, самостоятельно вносит правки в .NET проект, ведёт и читает документацию, понимает общую картину работы.
 
-ЧТО УЖЕ СДЕЛАНО (ЭТАП 1: АРХИТЕКТУРА И ПОДГОТОВКА ОКРУЖЕНИЯ)
-- Создано .NET 8 решение с проектами ProjectAIAgent.Host (Web Application) и ProjectAIAgent.Core (Class Library).
-- Настроены и проверены все интеграции: Ollama (локальная LLM qwen2.5-coder:7b-instruct) и Qdrant (векторная БД) через Docker.
-- Модель отвечает на тестовые запросы, проверочный код Этапа 1 пройден успешно.
+ТЕКУЩАЯ СТАДИЯ: Этапы 1-8 завершены. Проект готов к использованию.
 
-ЧТО СДЕЛАНО (ЭТАП 2: ПРОЕКТИРОВАНИЕ СИСТЕМЫ АГЕНТОВ)
-- Создан BaseAgent, IAgentTool, ToolResult, AgentToolAttribute.
-- ToolRegistry с авторегистрацией через рефлексию (AddAgentTools).
-- Четыре агента: OrchestratorAgent, CodeEditorAgent, DocumentationAgent, ContextAgent.
-- Три базовых инструмента: ReadFileTool, WriteFileTool, ProjectStructureTool.
-- Системные промпты: orchestrator.txt, code-editor.txt, documentation.txt.
-- AgentWorkerService с двумя режимами (A — Агент, T — Тестирование промптов).
-- Юнит-тесты для ReadFileTool и WriteFileTool.
+═══════════════════════════════════════════════════════════
 
-ЧТО СДЕЛАНО (ЭТАП 3: ИНТЕГРАЦИЯ ЛОКАЛЬНОЙ МОДЕЛИ)
-- ILlmService / LlmService с прямыми HTTP-вызовами /api/generate и Polly-ретраями (3 попытки).
-- LlmResponseParser: извлечение кода из Markdown, JSON-планов, ConvertJsonElement для Unicode.
-- Параметры генерации: Temperature 0.2, TopP 0.9, MaxTokens 4096, MaxRetries 3.
-- PromptTesterService для ручного тестирования промптов в обход агентов.
-- Интеграция LLM в OrchestratorAgent: цикл "LLM -> JSON -> Инструмент -> Результат -> LLM -> Report".
-- Все три промпта доработаны по результатам тестирования.
+СТАТУС ЭТАПОВ
 
-ЧТО СДЕЛАНО (ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ)
-- DocumentationService: поиск .md/.txt/.rst/.adoc, разбиение на чанки по секциям ##, векторизация.
-- IOllamaEmbeddingClient / OllamaEmbeddingClient для /api/embeddings (прямые HTTP-вызовы).
-- IQdrantService / QdrantService: коллекции, вставка/поиск/удаление точек (REST API).
-- DocumentationIndexerService: полная индексация документации при старте агента.
-- DocumentationWatcherService: отслеживание изменений .md/.txt через FileSystemWatcher с дебаунсом 3 сек.
-- ReadDocumentationTool: семантический поиск по документации через Qdrant с оценкой релевантности.
-- UpdateDocumentationTool: обновление/создание секций с автореиндексацией в Qdrant.
-- ContextAgent + ProjectContext: история взаимодействий, фазы работы (WorkPhase), кеш структуры, счётчик ошибок.
-- DocumentChunk, QdrantPoint, QdrantSearchResult.
+Этап 1: Архитектура и подготовка окружения — ЗАВЕРШЁН
+Этап 2: Проектирование системы агентов — ЗАВЕРШЁН
+Этап 3: Интеграция локальной модели — ЗАВЕРШЁН
+Этап 4: Реализация Memory и Документации — ЗАВЕРШЁН
+Этап 5: Разработка оркестрации — ЗАВЕРШЁН
+Этап 6: CLI и API — ЗАВЕРШЁН
+Этап 7: Тестирование и улучшение — ЗАВЕРШЁН
+Этап 8: Документирование и деплой — ЗАВЕРШЁН
 
-ЧТО СДЕЛАНО (ЭТАП 5: РАЗРАБОТКА ОРКЕСТРАЦИИ)
-- RunShellCommandTool: выполнение команд через CliWrap с белым списком (dotnet, git, npm, docker и др.).
-- GitDiffTool: status (изменённые/добавленные/удалённые), diff (просмотр изменений), log (история) через LibGit2Sharp.
-- ChangePlan + ChangeStep: модель плана с шагами, статусами (PlanStatus, StepStatus), прогрессом.
-- Доработан OrchestratorAgent: полный цикл Explore -> Read -> Write -> Validate -> Document -> Show -> Report.
-- BuildValidationService: dotnet build с анализом ошибок CS/MSB, ретраи до 3 попыток, BuildResult.
-- ReportService: форматированные отчёты (полный и краткий) с эмодзи, статистикой, метриками.
-- Обновлён orchestrator.txt: 9 шагов, примеры для run_shell_command, git_diff, read_documentation.
+═══════════════════════════════════════════════════════════
 
-ЧТО СДЕЛАНО (ЭТАП 6: CLI И API)
-- CLI-команды (System.CommandLine + Spectre.Console): start, set-project, request, status, history, docs query.
-- Web API (ASP.NET Core): POST /api/agent/set-project, POST /api/agent/request, GET /api/agent/status, GET /api/agent/history.
-- Swagger/OpenAPI (Swashbuckle): документация API по /swagger.
-- SignalR хаб (AgentHub): real-time уведомления — ProgressUpdate, ToolExecuted, BuildCompleted, RequestCompleted, ErrorOccurred.
-- SignalRLoggingService для отправки событий из OrchestratorAgent.
-- Web UI (Razor Pages): тёмная тема, поле запроса, лог в реальном времени, история, статус-бейдж с анимацией.
-- Проект переведён с Worker SDK на Web SDK для поддержки контроллеров, Razor Pages и SignalR.
+ПРАВИЛА РАБОТЫ С ПРОЕКТОМ (ДЛЯ AI-АССИСТЕНТА)
 
-ЧТО СДЕЛАНО (ЭТАП 7: ТЕСТИРОВАНИЕ И УЛУЧШЕНИЕ)
-- Исправлены все предупреждения сборки: 0 ошибок, 0 предупреждений (CS8601 в OllamaApiClientWrapper, CS8602/CS8604 в OrchestratorAgent).
-- Юнит-тесты для инструментов (xUnit + Moq):
-  - ReadFileToolTests: чтение файла, отсутствующий файл, отсутствие параметров.
-  - WriteFileToolTests: запись файла, создание вложенных директорий.
-  - RunShellCommandToolTests: разрешённая команда, запрещённая команда, отсутствие параметров, несуществующая команда.
-  - GitDiffToolTests: status, log, неизвестная операция, отсутствие параметров (использует реальный Git-репозиторий).
-- Юнит-тесты для сервисов:
-  - LlmResponseParserTests (12 тестов): ExtractCodeBlock, ExtractAllCodeBlocks, ExtractActionPlan (JSON, Markdown, кириллица, невалидный), ExtractJson, ContainsCode, ExtractTextWithoutCode.
-  - ReportServiceTests (5 тестов): GenerateReport (успех, провал, пустые данные), GenerateShortReport (успех, провал).
-- Создан тестовый проект-песочница (SandboxApp):
-  - Изолированный .NET 8 консольный проект с UserService и Calculator.
-  - Calculator.Divide содержит намеренный баг (деление на ноль) для тестирования валидации.
-  - Тестовая документация в docs/README.md.
-  - Инициализирован Git-репозиторий для тестирования git_diff.
-- Реализован MetricsService:
-  - TotalRequests, SuccessfulRequests, FailedRequests, SuccessRate.
-  - AverageDuration, TotalLlmCalls, TotalToolCalls.
-  - SuccessfulBuilds, TotalBuildAttempts, BuildSuccessRate.
-  - TopTools — топ-5 используемых инструментов.
-  - GetSummary() — человекочитаемая сводка.
-  - Интегрирован в OrchestratorAgent (запись метрик после каждого запроса).
-- Проведено итеративное тестирование промптов с оценкой качества:
-  - Orchestrator: 9/10 — стабильно выбирает правильные инструменты (project_structure, read_file, git_diff).
-  - Code Editor: 9.5/10 — генерирует код с пояснениями, запрашивает контекст перед изменениями.
-  - Documentation: 8/10 — структура идеальная, но выдумывает параметры без доступа к коду.
-- Улучшены промпты по результатам тестирования:
-  - orchestrator.txt: правило "NEVER wrap JSON in triple-backtick blocks".
-  - code-editor.txt: правила "XML-документация для всех публичных методов" и "не угадывать код".
-  - documentation.txt: правило "[Неизвестно/Unknown] для непроверенных параметров".
+При начале нового диалога я передам этот документ. Ты должен:
 
-ЧТО БУДЕТ СДЕЛАНО (ЭТАП 8: ДОКУМЕНТИРОВАНИЕ И ДЕПЛОЙ)
-Цель: Подготовить проект к использованию и распространению.
-Подзадачи:
-1. Не выполнено: Написать полную документацию (установка, пользователь, API reference, контрибьютор)
-2. Не выполнено: Docker-контейнеризация самого агента (Dockerfile, Docker Compose с Ollama, Qdrant и агентом)
-3. Не выполнено: CI/CD пайплайн (GitHub Actions: сборка, тестирование, публикация Docker-образа, линтинг)
-4. Не выполнено: Подготовка релиза (CHANGELOG.md, SemVer, бинарники для ОС)
-5. Не выполнено: Видео-демонстрация работы (опционально)
-6. Не выполнено: Статья/презентация о проекте
+1. ВНИМАТЕЛЬНО ИЗУЧИТЬ документ — особенно текущую стадию, структуру, архитектурные решения.
+2. РАБОТАТЬ ПОЭТАПНО И ПО ПОДЗАДАЧАМ:
+   - Сначала общий план этапа с перечнем подзадач.
+   - Затем детально разбираем каждую подзадачу по одной.
+   - Для каждой подзадачи: объясняешь ЧТО делаем, КАКИЕ ФАЙЛЫ создаём/правим, ПОЛНЫЙ КОД каждого файла.
+3. ПРЕРЫВАТЬСЯ И ЗАПРАШИВАТЬ СОДЕРЖИМОЕ СУЩЕСТВУЮЩИХ ФАЙЛОВ, если оно нужно для полноты картины. Не угадывать содержимое.
+4. ПРИСЫЛАТЬ ОСМЫСЛЕННЫЙ ТЕКСТ ДЛЯ GIT-КОММИТА после каждой завершённой подзадачи.
+5. ПОСЛЕ КАЖДОГО ИСПРАВЛЕНИЯ ОШИБОК присылать текст коммита.
+6. ПЕРЕД ПЕРЕХОДОМ К СЛЕДУЮЩЕЙ ПОДЗАДАЧЕ ИЛИ ЭТАПУ — текст коммита.
+7. ПОСЛЕ КАЖДОЙ ПОДЗАДАЧИ СООБЩАТЬ В КАКОЙ ДОКУМЕНТАЦИИ И КАКОМ ФРАГМЕНТЕ МЕНЯТЬ ИНФОРМАЦИЮ.
+8. ПРОВЕРЯТЬ СБОРКУ (dotnet build) после каждых изменений. При ошибках — исправлять немедленно.
+9. ВЕСТИ ИТОГОВУЮ ДОКУМЕНТАЦИЮ — после каждого завершённого этапа присылать обновлённую версию этого документа.
+10. ИСПОЛЬЗОВАТЬ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ДЛЯ MARKDOWN-РАЗМЕТКИ в ответах, так как диалог использует ту же разметку:
+    !SQ! = ``` (три обратные кавычки)
+    !SQB! = ```bash
+    !SQCS! = ```csharp
+    !SQJS! = ```json
+    !SQY! = ```yaml
+    При отправке кода пользователю — заменять эти обозначения на реальные символы.
 
-ПОЛНЫЙ ПЛАН ПРОЕКТА (8 ЭТАПОВ)
+═══════════════════════════════════════════════════════════
 
-ЭТАП 1: АРХИТЕКТУРА И ПОДГОТОВКА ОКРУЖЕНИЯ — ЗАВЕРШЁН
-ЭТАП 2: ПРОЕКТИРОВАНИЕ СИСТЕМЫ АГЕНТОВ — ЗАВЕРШЁН
-ЭТАП 3: ИНТЕГРАЦИЯ ЛОКАЛЬНОЙ МОДЕЛИ — ЗАВЕРШЁН
-ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ — ЗАВЕРШЁН
-ЭТАП 5: РАЗРАБОТКА ОРКЕСТРАЦИИ — ЗАВЕРШЁН
-ЭТАП 6: CLI И API — ЗАВЕРШЁН
-ЭТАП 7: ТЕСТИРОВАНИЕ И УЛУЧШЕНИЕ — ЗАВЕРШЁН
-ЭТАП 8: ДОКУМЕНТИРОВАНИЕ И ДЕПЛОЙ — СЛЕДУЮЩИЙ
+АРХИТЕКТУРА ПРОЕКТА
 
-СТЕК И ЗАВИСИМОСТИ (ФИНАЛЬНАЯ ВЕРСИЯ ЭТАПА 7)
+ТИП ПРОЕКТА: .NET 8 решение с двумя проектами.
 
-ИНФРАСТРУКТУРА
-- Локальная LLM: Ollama (qwen2.5-coder:7b-instruct) — генерация кода, ответов и эмбеддингов.
-- Векторная БД: Qdrant (в Docker) — хранение и семантический поиск (коллекция project_docs, 3584, Cosine).
-- Контейнеризация: Docker Compose — управление Ollama и Qdrant локально.
+PROJECTAIAGENT.HOST (Web Application, бывший Worker Service):
+- Точка входа, DI-контейнер, конфигурация.
+- ASP.NET Core: контроллеры (Web API), Razor Pages (Web UI), SignalR хаб.
+- Фоновые службы (IHostedService): AgentWorkerService, DocumentationIndexerService, DocumentationWatcherService.
+- HTTP-клиенты: OllamaApiClientWrapper, OllamaEmbeddingClient, QdrantService.
+- CLI-сервис: CliService (System.CommandLine + Spectre.Console).
 
-.NET СТЕК
-- Microsoft.AspNetCore.App (Web SDK) — Kestrel, контроллеры, Razor Pages, SignalR.
-- Microsoft.Extensions.Hosting — жизненный цикл и фоновые службы.
-- Microsoft.Extensions.Logging.Console — логирование в консоль.
-- Microsoft.Extensions.DependencyInjection.Abstractions — DI.
-- Microsoft.Extensions.Options — паттерн Options.
-- Microsoft.Extensions.Http — HttpClientFactory и AddHttpClient.
-- Polly.Core — ретраи и таймауты.
-- OllamaSharp — модели (GenerateRequest, RequestOptions).
-- CliWrap — запуск внешних команд (dotnet build/test).
-- LibGit2Sharp — работа с Git (status, diff, log).
-- System.CommandLine — парсинг CLI-команд.
-- Spectre.Console — красивый консольный вывод.
-- Swashbuckle.AspNetCore — Swagger/OpenAPI.
-- Microsoft.AspNetCore.SignalR — real-time уведомления.
-- Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation — Runtime-компиляция Razor Pages.
+PROJECTAIAGENT.CORE (Class Library):
+- Агенты: OrchestratorAgent, CodeEditorAgent, DocumentationAgent, ContextAgent.
+- Инструменты (IAgentTool): 7 шт., авторегистрация через [AgentTool] и AddAgentTools.
+- Сервисы: LlmService, LlmResponseParser, DocumentationService, BuildValidationService, ReportService, MetricsService, PromptLoader.
+- Модели: DocumentChunk, ProjectContext, ChangePlan, RequestMetrics.
+- Системные промпты: orchestrator.txt, code-editor.txt, documentation.txt (в Core/Prompts/).
 
-ТЕСТОВЫЙ СТЕК
-- xUnit — фреймворк тестирования.
-- Moq — моки для зависимостей.
-- Microsoft.NET.Test.Sdk — запуск тестов.
+КЛЮЧЕВЫЕ АРХИТЕКТУРНЫЕ РЕШЕНИЯ (20 пунктов):
 
-ИСКЛЮЧЁННЫЕ ПАКЕТЫ
-- Microsoft.Agents.Hosting — не существует в NuGet. Заменён собственной оркестрацией.
+1. Разделение на Host (Web App) и Core (Class Library) для тестируемости.
+2. Ollama как единственный AI-бэкенд (qwen2.5-coder:7b-instruct, замена через appsettings.json).
+3. Прямые HTTP-вызовы к Ollama /api/generate и /api/embeddings (OllamaSharp только для моделей).
+4. Semantic Kernel только для Memory (Этап 4).
+5. Собственная оркестрация (AgentWorkerService + OrchestratorAgent), не Microsoft.Agents.Hosting.
+6. Qdrant как векторное хранилище (3584 измерения, Cosine distance, коллекция project_docs).
+7. Git через LibGit2Sharp для контроля версий изменений.
+8. Обязательная валидация dotnet build после изменений (BuildValidationService, до 3 ретраев).
+9. Tool-based архитектура с авторегистрацией через рефлексию.
+10. Prompt-driven поведение: 3 промпта в .txt файлах, PromptLoader с кешированием.
+11. Polly ResiliencePipeline в LlmService (ретры + таймаут).
+12. Два режима AgentWorkerService: A (Агент) / T (Тестирование промптов).
+13. Автоиндексация документации при старте + FileSystemWatcher с дебаунсом 3 сек.
+14. ContextAgent + ProjectContext: история до 20 записей, фазы WorkPhase.
+15. ReportService: полный и краткий форматированный отчёт.
+16. Три интерфейса: CLI, Web API (REST), Web UI (Razor Pages + SignalR).
+17. SignalR (AgentHub): 5 real-time событий.
+18. MetricsService: агрегация метрик между запросами.
+19. Песочница SandboxApp для безопасных экспериментов.
+20. 30 юнит-тестов (xUnit + Moq), 0 предупреждений сборки.
 
-СТРУКТУРА РЕШЕНИЯ (ТЕКУЩАЯ, ПОСЛЕ ЭТАПА 7)
+═══════════════════════════════════════════════════════════
+
+СТРУКТУРА РЕШЕНИЯ (АКТУАЛЬНАЯ)
+
 AIAgentPlatform/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                 # CI/CD: build, test, docker push
+│       └── ci.yml                 # CI/CD: build, test, docker push в Docker Hub
+├── AIAgentPlatform.sln
 ├── Dockerfile                     # Docker-образ агента (в корне)
 ├── .dockerignore
-├── AIAgentPlatform.sln
+├── CHANGELOG.md                   # История изменений
+├── CONTRIBUTING.md                # Руководство для контрибьюторов
+├── README.md                      # Основной README
+├── docs/
+│   └── USER_GUIDE.md              # Руководство пользователя
 ├── local-infra/
-│   └── docker-compose.yml          # Ollama + Qdrant
-├── ProjectAIAgent.Host/            # Web Application: API, CLI, Web UI, фоновые службы
-│   ├── Program.cs                  # DI, конфигурация, middleware (секции 1-11)
-│   ├── AgentWorkerService.cs       # Интерактивный цикл (режимы A / T)
-│   ├── OllamaApiClientWrapper.cs   # HTTP-клиент /api/generate
-│   ├── OllamaEmbeddingClient.cs    # HTTP-клиент /api/embeddings
-│   ├── QdrantService.cs           # HTTP-клиент Qdrant REST API
-│   ├── DocumentationIndexerService.cs  # Индексация документации при старте
-│   ├── DocumentationWatcherService.cs  # Отслеживание изменений .md/.txt
-│   ├── PromptTesterService.cs      # Тестирование промптов
-│   ├── CliService.cs              # Обработка CLI-команд
-│   ├── SignalRLoggingService.cs    # Отправка событий через SignalR
+│   └── docker-compose.yml         # Ollama + Qdrant + Agent (3 сервиса)
+├── ProjectAIAgent.Host/           # Web Application
+│   ├── Program.cs                 # DI, middleware (секции 1-11)
+│   ├── AgentWorkerService.cs      # Интерактивный цикл (A/T)
+│   ├── OllamaApiClientWrapper.cs  # HTTP /api/generate
+│   ├── OllamaEmbeddingClient.cs   # HTTP /api/embeddings
+│   ├── QdrantService.cs          # HTTP Qdrant REST API
+│   ├── DocumentationIndexerService.cs  # Индексация при старте
+│   ├── DocumentationWatcherService.cs  # FileSystemWatcher
+│   ├── PromptTesterService.cs     # Тестирование промптов
+│   ├── CliService.cs             # CLI-команды
+│   ├── SignalRLoggingService.cs   # SignalR-уведомления
 │   ├── Controllers/
-│   │   └── AgentController.cs     # Web API: set-project, request, status, history
+│   │   └── AgentController.cs    # Web API (4 эндпоинта)
 │   ├── Hubs/
-│   │   └── AgentHub.cs            # SignalR хаб
+│   │   └── AgentHub.cs           # SignalR хаб
 │   ├── Pages/
-│   │   ├── Index.cshtml           # Web UI (тёмная тема, лог, история)
-│   │   └── Index.cshtml.cs        # Code-behind
-│   ├── appsettings.json            # Конфигурация Ollama, Qdrant, Agent, Logging
+│   │   ├── Index.cshtml          # Web UI
+│   │   └── Index.cshtml.cs
+│   ├── appsettings.json
 │   └── ProjectAIAgent.Host.csproj
-├── ProjectAIAgent.Core/            # Бизнес-логика, агенты, инструменты, сервисы
+├── ProjectAIAgent.Core/           # Class Library
 │   ├── Agents/
 │   │   ├── BaseAgent.cs
-│   │   ├── OrchestratorAgent.cs    # Полный цикл с SignalR и MetricsService
+│   │   ├── OrchestratorAgent.cs   # Полный цикл + SignalR + Metrics
 │   │   ├── CodeEditorAgent.cs
 │   │   ├── DocumentationAgent.cs
 │   │   └── ContextAgent.cs
 │   ├── Tools/
-│   │   ├── IAgentTool.cs           # Интерфейс, ToolResult, AgentToolAttribute
-│   │   ├── ToolRegistry.cs         # Реестр с авторегистрацией
+│   │   ├── IAgentTool.cs         # Интерфейс, ToolResult, атрибут
+│   │   ├── ToolRegistry.cs       # Реестр + AddAgentTools
 │   │   ├── ReadFileTool.cs
 │   │   ├── WriteFileTool.cs
 │   │   ├── ProjectStructureTool.cs
-│   │   ├── ReadDocumentationTool.cs
-│   │   ├── UpdateDocumentationTool.cs
-│   │   ├── RunShellCommandTool.cs  # Выполнение команд (безопасность)
-│   │   └── GitDiffTool.cs         # Git status/diff/log
+│   │   ├── ReadDocumentationTool.cs   # Семантический поиск
+│   │   ├── UpdateDocumentationTool.cs # Обновление + реиндексация
+│   │   ├── RunShellCommandTool.cs     # Безопасные команды
+│   │   └── GitDiffTool.cs        # Git status/diff/log
 │   ├── Services/
 │   │   ├── ILlmService.cs / LlmService.cs
 │   │   ├── LlmResponseParser.cs
@@ -197,18 +153,18 @@ AIAgentPlatform/
 │   │   ├── QdrantOptions.cs
 │   │   ├── IDocumentationService.cs / DocumentationService.cs
 │   │   ├── IQdrantService.cs
-│   │   ├── BuildValidationService.cs  # dotnet build с ретраями
-│   │   ├── ReportService.cs           # Форматированные отчёты
-│   │   ├── MetricsService.cs          # Метрики качества
+│   │   ├── BuildValidationService.cs
+│   │   ├── ReportService.cs
+│   │   ├── MetricsService.cs
 │   │   └── PromptLoader.cs
 │   ├── Models/
 │   │   ├── DocumentChunk.cs
-│   │   ├── ProjectContext.cs        # Состояние, история, фазы
-│   │   └── ChangePlan.cs            # План изменений с шагами
+│   │   ├── ProjectContext.cs     # Состояние, WorkPhase, InteractionRecord
+│   │   └── ChangePlan.cs         # ChangeStep, PlanStatus, StepStatus
 │   ├── Prompts/
-│   │   ├── orchestrator.txt        # 9-шаговый workflow с валидацией
-│   │   ├── code-editor.txt         # C# 12 практики, XML-документация
-│   │   └── documentation.txt       # Русский/English, [Неизвестно] для параметров
+│   │   ├── orchestrator.txt      # 9-шаговый workflow
+│   │   ├── code-editor.txt       # C# 12, XML-документация
+│   │   └── documentation.txt     # RU/EN, [Неизвестно]
 │   └── ProjectAIAgent.Core.csproj
 ├── tests/
 │   ├── ProjectAIAgent.Core.Tests/
@@ -222,16 +178,57 @@ AIAgentPlatform/
 │   │   │   └── ReportServiceTests.cs
 │   │   └── ProjectAIAgent.Core.Tests.csproj
 │   └── ProjectAIAgent.Sandbox/
-│       └── SandboxApp/              # Изолированная песочница для тестов
+│       └── SandboxApp/           # Изолированная песочница
 │           ├── Program.cs
 │           ├── UserService.cs
 │           ├── Calculator.cs
 │           └── docs/README.md
 └── README.md
 
-КОНФИГУРАЦИЯ (ТЕКУЩАЯ)
+═══════════════════════════════════════════════════════════
 
-appsettings.json (Host):
+КОМПОНЕНТЫ СИСТЕМЫ
+
+АГЕНТЫ (4):
+- OrchestratorAgent — главный оркестратор. Принимает запрос, получает контекст от ContextAgent, строит системный промпт с {TOOLS}, вызывает LLM, парсит JSON-ответы (ExtractActionPlanRobust), вызывает инструменты через ToolRegistry.ExecuteToolAsync. Цикл: Explore -> Read -> Write -> Validate -> Document -> Report. Защита от зацикливания (MaxIterations=10). Инжектит: ToolRegistry, ILlmService, ContextAgent, BuildValidationService, ReportService, MetricsService.
+- CodeEditorAgent — чтение/изменение файлов. Инструменты: ReadFileTool, WriteFileTool.
+- DocumentationAgent — работа с документацией. Инструменты: ReadDocumentationTool, UpdateDocumentationTool.
+- ContextAgent — управление контекстом (ProjectContext). Методы: SetProjectPath, CacheProjectStructure, RegisterFileModification, RegisterError, RecordInteraction, SetPhase, GetContextSummary, ResetErrors.
+
+ИНСТРУМЕНТЫ (7, все реализуют IAgentTool, регистрируются через [AgentTool] и AddAgentTools):
+- read_file — чтение файла. Зависимости: IOptions<AgentOptions>.
+- write_file — запись файла с созданием директорий. Зависимости: IOptions<AgentOptions>.
+- project_structure — сканирование структуры. Зависимости: IOptions<AgentOptions>.
+- read_documentation — семантический поиск по Qdrant. Зависимости: IOllamaEmbeddingClient, IQdrantService, IOptions<QdrantOptions>.
+- update_documentation — обновление/создание секций с реиндексацией. Зависимости: IDocumentationService, IOllamaEmbeddingClient, IQdrantService, IOptions<AgentOptions>, IOptions<QdrantOptions>.
+- run_shell_command — выполнение команд (белый список: dotnet, git, npm, docker, echo, dir, ls, cat, type). Зависимости: CliWrap, IOptions<AgentOptions>.
+- git_diff — Git status/diff/log. Зависимости: LibGit2Sharp, IOptions<AgentOptions>.
+
+ФОНОВЫЕ СЛУЖБЫ (4):
+- AgentWorkerService (HostedService) — интерактивный цикл, выбор режима A/T.
+- DocumentationIndexerService (HostedService) — индексация документации при старте.
+- DocumentationWatcherService (HostedService) — отслеживание изменений .md/.txt через FileSystemWatcher.
+- BuildValidationService (встроен в OrchestratorAgent) — dotnet build с ретраями.
+
+СЕРВИСЫ:
+- ILlmService / LlmService — вызов Ollama /api/generate с Polly-ретраями.
+- LlmResponseParser — статический хелпер: ExtractCodeBlock, ExtractActionPlan, ExtractJson, ConvertJsonElement.
+- IOllamaApiClient / OllamaApiClientWrapper — HTTP-клиент для /api/generate.
+- IOllamaEmbeddingClient / OllamaEmbeddingClient — HTTP-клиент для /api/embeddings.
+- IDocumentationService / DocumentationService — поиск .md/.txt, чанки, векторизация.
+- IQdrantService / QdrantService — Qdrant REST API.
+- BuildValidationService — dotnet build, BuildResult, BuildAttempt, ExtractBuildErrors.
+- ReportService — GenerateReport (полный), GenerateShortReport (краткий).
+- MetricsService — агрегация RequestMetrics, GetSummary().
+- PromptLoader — загрузка .txt промптов с кешированием.
+- PromptTesterService — ручное тестирование промптов.
+- CliService — CLI-команды.
+- SignalRLoggingService — отправка событий через AgentHub.
+
+═══════════════════════════════════════════════════════════
+
+КОНФИГУРАЦИЯ (appsettings.json)
+
 {
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
@@ -255,80 +252,166 @@ appsettings.json (Host):
     "RequireConfirmation": false,
     "AutoCommit": false,
     "WatchDocumentation": true
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "ProjectAIAgent.Core.Services": "Debug"
-    }
   }
 }
 
-ПРИНЯТЫЕ АРХИТЕКТУРНЫЕ РЕШЕНИЯ
+═══════════════════════════════════════════════════════════
 
-1. Разделение на Host (Web Application) и Core (Class Library).
-2. Ollama как единственный AI-бэкенд (прямые HTTP-вызовы /api/generate и /api/embeddings).
-3. Прямой доступ к Ollama API через HttpClient (OllamaSharp только для моделей).
-4. Semantic Kernel только для Memory, не для оркестрации.
-5. Собственная оркестрация (AgentWorkerService + OrchestratorAgent).
-6. Qdrant как постоянное векторное хранилище (3584, Cosine, коллекция project_docs).
-7. Git как система контроля версий изменений (LibGit2Sharp).
-8. Обязательная валидация через dotnet build (BuildValidationService, до 3 попыток).
-9. Tool-based архитектура с авторегистрацией (7 инструментов через [AgentTool]).
-10. Prompt-driven поведение агентов (3 промпта, PromptLoader, PromptTesterService).
-11. Polly для устойчивости к сбоям (LlmService, ResiliencePipeline).
-12. Два режима AgentWorkerService (A — Агент, T — Тестирование промптов).
-13. Автоматическая индексация документации (старт + FileSystemWatcher с дебаунсом 3 сек).
-14. Контекстная память проекта (ContextAgent + ProjectContext, история до 20 записей).
-15. Форматированные отчёты (ReportService, полный и краткий форматы).
-16. Три интерфейса взаимодействия: CLI, Web API, Web UI.
-17. Real-time уведомления через SignalR (AgentHub, 5 событий).
-18. Метрики качества (MetricsService, агрегация между запросами).
-19. Тестовый проект-песочница для безопасных экспериментов.
-20. Юнит-тесты для всех инструментов и ключевых сервисов (xUnit + Moq).
+СПОСОБЫ ВЗАИМОДЕЙСТВИЯ
 
-СПОСОБЫ ВЗАИМОДЕЙСТВИЯ С АГЕНТОМ
+1. Интерактивный режим: dotnet run (без аргументов) -> выбор A или T.
+2. CLI: dotnet run -- <команда> [аргументы].
+   Команды: start, set-project <path>, request <desc>, status, history, docs query <query>.
+3. Web API: http://localhost:5000/api/agent/*
+   Эндпоинты: POST set-project, POST request, GET status, GET history?limit=N.
+4. Web UI: http://localhost:5000/ (Razor Pages + SignalR).
+5. Swagger: http://localhost:5000/swagger.
 
-1. Интерактивный режим: dotnet run (без аргументов) -> выбор A (Агент) или T (Тестирование).
-2. CLI-команды: dotnet run -- <command> [args] (start, set-project, request, status, history, docs query).
-3. Web API: HTTP-запросы к http://localhost:5000/api/agent/* (set-project, request, status, history).
-4. Web UI: http://localhost:5000/ (Razor Pages с тёмной темой и SignalR).
-5. Swagger: http://localhost:5000/swagger (документация API).
+═══════════════════════════════════════════════════════════
 
-ИНСТРУМЕНТЫ (7)
+ТИПИЧНЫЙ WORKFLOW ОРКЕСТРАЦИИ
 
-read_file, write_file, project_structure, read_documentation, update_documentation, run_shell_command, git_diff
+1. Пользователь отправляет запрос: "Добавь метод Multiply в Calculator".
+2. ContextAgent предоставляет сводку контекста (ProjectContext.GetContextSummary).
+3. OrchestratorAgent формирует системный промпт с {TOOLS} и контекстом.
+4. LLM возвращает JSON: {"action":"delegate","tool":"project_structure","args":{"path":"."}}.
+5. ExtractActionPlanRobust парсит JSON, ExecuteToolFromPlan вызывает инструмент.
+6. Результат добавляется в conversationHistory (StringBuilder).
+7. Цикл повторяется: read_file -> write_file -> run_shell_command (dotnet build).
+8. BuildValidationService выполняет сборку, при ошибке — до 3 ретраев.
+9. При успехе: git_diff -> report.
+10. ContextAgent записывает взаимодействие в историю.
+11. MetricsService записывает метрики запроса.
+12. ReportService генерирует форматированный отчёт.
 
-АГЕНТЫ (4)
+═══════════════════════════════════════════════════════════
 
-OrchestratorAgent, CodeEditorAgent, DocumentationAgent, ContextAgent
+СТЕК ТЕХНОЛОГИЙ
 
-ФОНОВЫЕ СЛУЖБЫ (4)
+ИНФРАСТРУКТУРА:
+- Ollama (локальная LLM, qwen2.5-coder:7b-instruct)
+- Qdrant (векторная БД, 3584 измерения, Cosine)
+- Docker Compose (3 сервиса: ollama, qdrant, agent)
 
-AgentWorkerService, DocumentationIndexerService, DocumentationWatcherService, BuildValidationService (встроен в OrchestratorAgent)
+.NET (основные пакеты):
+- Microsoft.AspNetCore.App (Web SDK) — Kestrel, Controllers, Razor Pages, SignalR
+- Microsoft.Extensions.Hosting, .Logging, .Options, .Http, .DependencyInjection
+- Polly.Core 8.5.2 — ретраи и таймауты
+- OllamaSharp 5.4.25 — модели GenerateRequest, RequestOptions
+- CliWrap 3.10.1 — запуск консольных команд
+- LibGit2Sharp 0.31.0 — работа с Git
+- System.CommandLine 2.0.0-beta4 — CLI
+- Spectre.Console 0.49.1 — красивый консольный вывод
+- Swashbuckle.AspNetCore 6.9.0 — Swagger
 
-МЕТРИКИ КАЧЕСТВА
+ТЕСТИРОВАНИЕ:
+- xUnit 2.9.2, Moq 4.20.72, Microsoft.NET.Test.Sdk 17.11.1
 
-Сбор метрик через MetricsService:
-- Всего запросов, успешных/проваленных, процент успешности
-- Среднее время выполнения
-- Вызовов LLM и инструментов
-- Успешность сборок (сборки успешно / всего попыток)
-- Топ-5 используемых инструментов
-- Метрики доступны через API (GET /api/agent/status) и CLI (agent status)
+DOCKER:
+- Dockerfile (multi-stage: sdk build + aspnet runtime)
+- docker-compose.yml (ollama + qdrant + agent)
+- Docker Hub для публикации образа
 
-ТЕСТЫ
+CI/CD:
+- GitHub Actions: build, test (30 тестов), docker push
+- Секреты: DOCKER_USERNAME, DOCKER_PASSWORD
 
-- Инструменты: ReadFileTool (3), WriteFileTool (2), RunShellCommandTool (4), GitDiffTool (4)
-- Сервисы: LlmResponseParser (12), ReportService (5)
-- Всего: 30 юнит-тестов
-- Сборка: 0 ошибок, 0 предупреждений
+═══════════════════════════════════════════════════════════
 
-БЛИЖАЙШИЕ ШАГИ (ПЛАН НА ЭТАП 8)
+ТЕКУЩЕЕ СОСТОЯНИЕ
 
-1. Написать полную документацию (установка, пользователь, API reference, контрибьютор)
-2. Docker-контейнеризация агента (Dockerfile, Docker Compose с Ollama, Qdrant и агентом)
-3. CI/CD пайплайн (GitHub Actions: сборка, тестирование, публикация Docker-образа)
-4. Подготовка релиза (CHANGELOG.md, SemVer, бинарники)
-5. Видео-демонстрация (опционально)
-6. Статья/презентация о проекте
+Сборка: 0 ошибок, 0 предупреждений.
+Тесты: 30 юнит-тестов (xUnit + Moq), все проходят.
+Инструменты: 7 (все реализованы и протестированы).
+Агенты: 4 (все реализованы).
+Фоновые службы: 4.
+Метрики: собираются через MetricsService, отображаются в status и Web UI.
+
+ЗАПУСК:
+cd local-infra && docker compose up -d
+docker exec -it ollama-server ollama pull qwen2.5-coder:7b-instruct
+docker compose restart agent
+# Агент на http://localhost:5000/
+
+Для разработки:
+cd ProjectAIAgent.Host && dotnet run
+
+═══════════════════════════════════════════════════════════
+
+ИСТОРИЯ РАЗРАБОТКИ ПО ЭТАПАМ
+
+ЭТАП 1: АРХИТЕКТУРА И ПОДГОТОВКА ОКРУЖЕНИЯ
+- Создано .NET 8 решение (Host Worker Service + Core Class Library).
+- Настроен Docker (Ollama + Qdrant), загружена модель qwen2.5-coder:7b-instruct.
+- Проверочный код подтвердил сквозную работу.
+
+ЭТАП 2: ПРОЕКТИРОВАНИЕ СИСТЕМЫ АГЕНТОВ
+- BaseAgent, IAgentTool, ToolResult, AgentToolAttribute, ToolRegistry, AddAgentTools.
+- 4 агента (заглушки), 3 инструмента (ReadFileTool, WriteFileTool, ProjectStructureTool).
+- Системные промпты в .txt файлах. AgentWorkerService с двумя режимами.
+- Юнит-тесты ReadFileTool и WriteFileTool. Исключён Microsoft.Agents.Hosting.
+
+ЭТАП 3: ИНТЕГРАЦИЯ ЛОКАЛЬНОЙ МОДЕЛИ
+- ILlmService / LlmService с прямыми HTTP-вызовами /api/generate, Polly-ретраи.
+- LlmResponseParser: код из Markdown, JSON-планы, ConvertJsonElement для Unicode.
+- Параметры генерации через OllamaOptions (Temperature 0.2, MaxTokens 4096).
+- PromptTesterService, PromptLoader. Интеграция LLM в OrchestratorAgent.
+- Цикл: LLM -> JSON -> Инструмент -> Результат -> LLM -> Report.
+- Доработаны все 3 промпта. Прямые HTTP-вызовы вместо OllamaSharp (ошибка 404).
+
+ЭТАП 4: РЕАЛИЗАЦИЯ MEMORY И ДОКУМЕНТАЦИИ
+- DocumentationService, IOllamaEmbeddingClient, IQdrantService.
+- DocumentationIndexerService, DocumentationWatcherService (FileSystemWatcher + дебаунс).
+- ReadDocumentationTool (семантический поиск), UpdateDocumentationTool (обновление + реиндексация).
+- ContextAgent + ProjectContext (WorkPhase, InteractionRecord, история до 20).
+- DocumentChunk, QdrantPoint, QdrantSearchResult.
+
+ЭТАП 5: РАЗРАБОТКА ОРКЕСТРАЦИИ
+- RunShellCommandTool (белый список команд), GitDiffTool (status/diff/log).
+- ChangePlan + ChangeStep (PlanStatus, StepStatus, ProgressPercent).
+- Доработан OrchestratorAgent: полный цикл с валидацией.
+- BuildValidationService: dotnet build, анализ ошибок CS/MSB, до 3 ретраев.
+- ReportService: форматированные отчёты (полный/краткий).
+- Обновлён orchestrator.txt (9 шагов, примеры для новых инструментов).
+
+ЭТАП 6: CLI И API
+- CLI-команды (System.CommandLine + Spectre.Console): start, set-project, request, status, history, docs query.
+- Web API (AgentController): 4 эндпоинта.
+- Swagger (Swashbuckle) по /swagger.
+- SignalR (AgentHub): 5 real-time событий. SignalRLoggingService.
+- Web UI (Razor Pages): тёмная тема, лог, история, статус-бейдж.
+- Проект переведён с Worker SDK на Web SDK.
+
+ЭТАП 7: ТЕСТИРОВАНИЕ И УЛУЧШЕНИЕ
+- Исправлены все предупреждения сборки (CS8601, CS8602, CS8604).
+- Юнит-тесты: ReadFileTool (3), WriteFileTool (2), RunShellCommandTool (4), GitDiffTool (4).
+- Юнит-тесты: LlmResponseParser (12), ReportService (5). Всего 30 тестов.
+- Песочница SandboxApp (UserService, Calculator с багом деления на ноль).
+- MetricsService: агрегация метрик (SuccessRate, BuildSuccessRate, TopTools).
+- Итеративное тестирование и улучшение всех 3 промптов.
+
+ЭТАП 8: ДОКУМЕНТИРОВАНИЕ И ДЕПЛОЙ
+- README.md, USER_GUIDE.md, CONTRIBUTING.md.
+- Dockerfile (в корне), обновлён docker-compose.yml (3 сервиса).
+- .dockerignore, .github/workflows/ci.yml (build, test, docker push в Docker Hub).
+- CHANGELOG.md, GitHub Release v1.0.0 с архивами для win-x64 и linux-x64.
+- Docker-образ: docker pull username/aiagent-platform:latest.
+
+═══════════════════════════════════════════════════════════
+
+ВАЖНЫЕ ЗАМЕТКИ
+
+- Модель qwen2.5-coder:7b-instruct требует ~8 ГБ RAM. Можно заменить в appsettings.json.
+- Qdrant: вектор 3584 (embedding_length модели), Cosine distance.
+- Semantic Kernel используется только для Memory.
+- Microsoft.Agents.Hosting исключён — собственная оркестрация.
+- Dockerfile в корне проекта (рядом с .sln), не в ProjectAIAgent.Host/.
+- Для CI/CD нужны секреты DOCKER_USERNAME и DOCKER_PASSWORD в GitHub.
+- Все изменения кода через Git (LibGit2Sharp).
+- Результаты read_file обрезаются до 3000 символов (защита контекстного окна).
+- RunShellCommandTool: белый список команд, запрет rm/del/format.
+- DocumentationAgent в тестовом режиме честно отказывается документировать без кода.
+- PromptTesterService: /role для смены роли, /system для просмотра промпта.
+- FileSystemWatcher: дебаунс 3 секунды, отключение через WatchDocumentation: false.
+- MetricsService: метрики доступны через API (status) и CLI (status).
+- Все инструменты регистрируются автоматически — достаточно добавить класс с [AgentTool] и IAgentTool.
