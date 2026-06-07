@@ -49,6 +49,10 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     
+    - name: Lowercase owner
+      id: owner
+      run: echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+    
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
       with:
@@ -56,5 +60,5 @@ jobs:
         file: ./Dockerfile
         push: true
         tags: |
-          ghcr.io/${{ github.repository_owner }}/aiagent-platform:latest
-          ghcr.io/${{ github.repository_owner }}/aiagent-platform:${{ github.sha }}
+          ghcr.io/${{ steps.owner.outputs.owner }}/aiagent-platform:latest
+          ghcr.io/${{ steps.owner.outputs.owner }}/aiagent-platform:${{ github.sha }}
