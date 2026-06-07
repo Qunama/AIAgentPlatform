@@ -7,10 +7,6 @@ using ProjectAIAgent.Core.Tools;
 
 namespace ProjectAIAgent.Host;
 
-/// <summary>
-/// Фоновая служба, реализующая интерактивный цикл обработки запросов пользователя.
-/// Поддерживает два режима: агент (полный цикл) и тестирование промптов (прямой LLM).
-/// </summary>
 public class AgentWorkerService : BackgroundService
 {
     private readonly OrchestratorAgent _orchestrator;
@@ -26,23 +22,28 @@ public class AgentWorkerService : BackgroundService
         ILogger<AgentWorkerService> logger,
         IHostApplicationLifetime appLifetime)
     {
-        _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
-        _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
-        _promptTester = promptTester ?? throw new ArgumentNullException(nameof(promptTester));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _appLifetime = appLifetime ?? throw new ArgumentNullException(nameof(appLifetime));
+        _orchestrator = orchestrator;
+        _toolRegistry = toolRegistry;
+        _promptTester = promptTester;
+        _logger = logger;
+        _appLifetime = appLifetime;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("🚀 AI Agent Platform запущен");
 
-        // Выводим список зарегистрированных инструментов
         var tools = _toolRegistry.GetAllTools();
         _logger.LogInformation("📦 Зарегистрировано {Count} инструментов:", tools.Count);
         foreach (var tool in tools)
-        {
             _logger.LogInformation("   • {Name}: {Description}", tool.Key, tool.Value.Description);
+
+        // В Docker-контейнере нет stdin — не запускаем интерактивный режим
+        if (Console.IsInputRedirected)
+        {
+            _logger.LogInformation("Running in non-interactive mode. Web API at http://0.0.0.0:5000/");
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+            return;
         }
 
         Console.WriteLine();
@@ -58,13 +59,9 @@ public class AgentWorkerService : BackgroundService
         var mode = modeChoice?.Trim().ToUpperInvariant();
 
         if (mode == "T")
-        {
             await _promptTester.RunAsync(stoppingToken);
-        }
         else
-        {
             await RunAgentModeAsync(stoppingToken);
-        }
 
         _appLifetime.StopApplication();
     }
@@ -96,16 +93,12 @@ public class AgentWorkerService : BackgroundService
             {
                 Console.WriteLine("⏳ Обработка запроса...");
                 var response = await _orchestrator.ProcessRequestAsync(input);
-
                 Console.WriteLine();
                 Console.WriteLine("🤖 Ответ агента:");
                 Console.WriteLine(response);
                 Console.WriteLine();
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка при обработке запроса");
