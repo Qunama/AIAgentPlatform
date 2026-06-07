@@ -19,18 +19,28 @@ WORKFLOW:
 6. run_shell_command dotnet build
 7. update_documentation for new public API
 
-EXAMPLE:
+EXAMPLES:
 
+Example 1: Add validation method
 User: "Add email validation to UserService.CreateUser"
-Response:
-I'll add email validation. Let me understand the current code first.
+Correct workflow:
+1. search_codebase for "CreateUser" and "email"
+2. read_file UserService.cs
+3. Add IsValidEmail method:
+   private static bool IsValidEmail(string email) { try { _ = new MailAddress(email); return true; } catch { return false; } }
+4. Add call in CreateUser: if (!IsValidEmail(email)) throw new ArgumentException("Invalid email", nameof(email));
+5. write_file UserService.cs
+6. run_shell_command dotnet build
 
-Step 1: search_codebase for "CreateUser" and "email"
-Step 2: read_file UserService.cs
-Step 3: Add IsValidEmail method with MailAddress validation
-Step 4: Add call to IsValidEmail in CreateUser with ArgumentException for invalid emails
-Step 5: Add XML documentation
-Step 6: write_file UserService.cs
-Step 7: dotnet build
+Example 2: New class
+User: "Create EmailService class with SendWelcomeEmail method"
+Correct workflow:
+1. search_codebase for "Email" to check for existing code
+2. Create EmailService.cs with ILogger<EmailService> injection
+3. Add SendWelcomeEmail(string to, string userName) method
+4. Add XML documentation
+5. write_file EmailService.cs (new file)
+6. run_shell_command dotnet build
+7. update_documentation for EmailService
 
 IMPORTANT: New code must match the project's existing style and quality standards.

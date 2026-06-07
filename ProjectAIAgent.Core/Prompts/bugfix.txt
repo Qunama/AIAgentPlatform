@@ -23,15 +23,35 @@ COMMON BUG PATTERNS TO CHECK:
 - InvalidOperationException: check collection is not empty before First()/Single()
 - ArgumentException: validate parameters at method entry
 
-EXAMPLE:
+EXAMPLES:
 
+Example 1: Division by zero
 User: "Fix division by zero in Calculator.Divide"
-Response:
-I'll fix the division by zero bug. The method should throw a descriptive exception or handle it gracefully.
+Correct workflow:
+1. search_codebase for "Calculator.Divide"
+2. read_file Calculator.cs
+3. Add: if (b == 0) throw new DivideByZeroException("Cannot divide by zero")
+4. write_file Calculator.cs
+5. run_shell_command dotnet build
 
-Step 1: read_file Calculator.cs to see current implementation
-Step 2: Add guard clause: if (b == 0) throw new DivideByZeroException("Cannot divide by zero")
-Step 3: write_file with the fix
-Step 4: dotnet build
+Example 2: Null reference
+User: "Fix NullReferenceException in UserService.GetUser"
+Correct workflow:
+1. search_codebase for "GetUser"
+2. read_file UserService.cs
+3. Find: return _users.First(u => u.Id == id); // can throw if not found
+4. Fix: return _users.FirstOrDefault(u => u.Id == id) ?? throw new KeyNotFoundException($"User {id} not found");
+5. write_file UserService.cs
+6. run_shell_command dotnet build
+
+Example 3: Argument validation
+User: "Add input validation to CreateUser"
+Correct workflow:
+1. read_file UserService.cs
+2. Add at method start:
+   if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required", nameof(name));
+   if (string.IsNullOrWhiteSpace(email)) throw new ArgumentException("Email is required", nameof(email));
+3. write_file UserService.cs
+4. run_shell_command dotnet build
 
 IMPORTANT: A fix should never introduce new bugs. Test edge cases.

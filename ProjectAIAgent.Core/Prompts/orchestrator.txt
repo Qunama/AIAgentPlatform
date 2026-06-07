@@ -68,6 +68,14 @@ Find usages of a method:
 Find usages in specific file:
 {"action":"delegate","tool":"find_usages","args":{"symbol":"IsValidEmail","file_pattern":"*.cs"}}
 
+Complete workflow example for code changes:
+Request: "Add email validation to UserService"
+Step 1: {"action":"delegate","tool":"search_codebase","args":{"query":"UserService.CreateUser email"}}
+Step 2: {"action":"delegate","tool":"find_usages","args":{"symbol":"CreateUser"}}
+Step 3: {"action":"delegate","tool":"read_file","args":{"path":"UserService.cs"}}
+Step 4: {"action":"plan","steps":[{"tool":"write_file","description":"Add IsValidEmail method","file_path":"UserService.cs"},{"tool":"run_shell_command","description":"Validate build","args":{"command":"dotnet build"}}]}
+Step 5: {"action":"report","message":"Added email validation to UserService.CreateUser. Build successful."}
+
 IMPORTANT:
 - Do NOT wrap JSON in triple-backtick blocks. Output raw JSON only.
 - After write_file, always suggest or run dotnet build.

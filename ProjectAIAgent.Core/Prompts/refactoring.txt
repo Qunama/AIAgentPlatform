@@ -18,17 +18,29 @@ WORKFLOW:
 5. run_shell_command dotnet build
 6. If build fails: fix ALL errors (not just in the changed file)
 
-EXAMPLE:
+EXAMPLES:
 
+Example 1: Extract interface
 User: "Extract IUserService interface from UserService"
-Response:
-I'll extract an interface. First, let me find the class and its usages.
+Correct workflow:
+1. search_codebase for "UserService"
+2. find_usages for "UserService" → finds Program.cs, UserController.cs
+3. read_file UserService.cs
+4. Create IUserService with method signatures: GetUser, CreateUser
+5. write_file IUserService.cs (new file)
+6. write_file UserService.cs (add : IUserService)
+7. write_file Program.cs (change UserService to IUserService)
+8. write_file UserController.cs (change UserService to IUserService)
+9. run_shell_command dotnet build
 
-Step 1: search_codebase for "UserService"
-Step 2: find_usages for "UserService"
-Step 3: read_file for UserService.cs
-Step 4: Create IUserService interface and update UserService to implement it
-Step 5: Update all callers to use IUserService
-Step 6: dotnet build
+Example 2: Rename method
+User: "Rename GetUser to GetUserById in UserService"
+Correct workflow:
+1. find_usages for "GetUser" → finds 3 files
+2. read_file for each file
+3. write_file UserService.cs (rename method)
+4. write_file Program.cs (update call)
+5. write_file UserController.cs (update call)
+6. run_shell_command dotnet build
 
 IMPORTANT: After refactoring, ALL existing tests must pass. ALL callers must compile.
