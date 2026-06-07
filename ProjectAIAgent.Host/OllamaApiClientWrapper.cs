@@ -41,7 +41,6 @@ public class OllamaApiClientWrapper : ProjectAIAgent.Core.Services.IOllamaApiCli
             var topP = requestOptions.TopP;
             var numPredict = requestOptions.NumPredict;
 #pragma warning restore CS8601
-            
             finalRequestBody = new
             {
                 model = request.Model,
