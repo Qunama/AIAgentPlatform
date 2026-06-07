@@ -142,7 +142,9 @@ AIAgentPlatform/
 │   │   ├── ReadDocumentationTool.cs   # Семантический поиск
 │   │   ├── UpdateDocumentationTool.cs # Обновление + реиндексация
 │   │   ├── RunShellCommandTool.cs     # Безопасные команды
-│   │   └── GitDiffTool.cs        # Git status/diff/log
+│   │   ├── GitDiffTool.cs        # Git status/diff/log
+│   │   ├── SearchCodebaseTool.cs   # Семантический поиск по коду
+│   │   └── FindUsagesTool.cs       # Поиск использований символа
 │   ├── Services/
 │   │   ├── ILlmService.cs / LlmService.cs
 │   │   ├── LlmResponseParser.cs
@@ -160,7 +162,8 @@ AIAgentPlatform/
 │   ├── Models/
 │   │   ├── DocumentChunk.cs
 │   │   ├── ProjectContext.cs     # Состояние, WorkPhase, InteractionRecord
-│   │   └── ChangePlan.cs         # ChangeStep, PlanStatus, StepStatus
+│   │   ├── ChangePlan.cs         # ChangeStep, PlanStatus, StepStatus
+│   │   └── CodeChunk.cs            # Чанк исходного кода
 │   ├── Prompts/
 │   │   ├── orchestrator.txt      # 9-шаговый workflow
 │   │   ├── code-editor.txt       # C# 12, XML-документация
@@ -195,7 +198,7 @@ AIAgentPlatform/
 - DocumentationAgent — работа с документацией. Инструменты: ReadDocumentationTool, UpdateDocumentationTool.
 - ContextAgent — управление контекстом (ProjectContext). Методы: SetProjectPath, CacheProjectStructure, RegisterFileModification, RegisterError, RecordInteraction, SetPhase, GetContextSummary, ResetErrors.
 
-ИНСТРУМЕНТЫ (7, все реализуют IAgentTool, регистрируются через [AgentTool] и AddAgentTools):
+ИНСТРУМЕНТЫ (9, все реализуют IAgentTool, регистрируются через [AgentTool] и AddAgentTools):
 - read_file — чтение файла. Зависимости: IOptions<AgentOptions>.
 - write_file — запись файла с созданием директорий. Зависимости: IOptions<AgentOptions>.
 - project_structure — сканирование структуры. Зависимости: IOptions<AgentOptions>.
@@ -203,6 +206,8 @@ AIAgentPlatform/
 - update_documentation — обновление/создание секций с реиндексацией. Зависимости: IDocumentationService, IOllamaEmbeddingClient, IQdrantService, IOptions<AgentOptions>, IOptions<QdrantOptions>.
 - run_shell_command — выполнение команд (белый список: dotnet, git, npm, docker, echo, dir, ls, cat, type). Зависимости: CliWrap, IOptions<AgentOptions>.
 - git_diff — Git status/diff/log. Зависимости: LibGit2Sharp, IOptions<AgentOptions>.
+- search_codebase
+- find_usages
 
 ФОНОВЫЕ СЛУЖБЫ (4):
 - AgentWorkerService (HostedService) — интерактивный цикл, выбор режима A/T.
@@ -239,11 +244,17 @@ AIAgentPlatform/
     "TimeoutSeconds": 120,
     "MaxRetries": 3,
     "RetryDelaySeconds": 2.0,
-    "TotalTimeoutSeconds": 300
+    "TotalTimeoutSeconds": 300,
+    "EmbeddingModel": "nomic-embed-text",
+    "ModelByTask": {
+        "default": "qwen2.5-coder:14b-instruct-q4_K_M",
+        "simple": "qwen2.5-coder:7b-instruct",
+        "refactoring": "deepseek-coder-v2:16b-lite-instruct-q4_K_M"
+    }
   },
   "Qdrant": {
     "Endpoint": "http://localhost:6333",
-    "VectorSize": 3584,
+    "VectorSize": 768,
     "CollectionName": "project_docs"
   },
   "Agent": {
@@ -254,6 +265,12 @@ AIAgentPlatform/
     "WatchDocumentation": true
   }
 }
+
+ИСПОЛЬЗУЕМЫЕ МОДЕЛИ:
+- qwen2.5-coder:7b-instruct — простые задачи (чтение, структура)
+- qwen2.5-coder:14b-instruct-q4_K_M — основные задачи (по умолчанию)
+- deepseek-coder-v2:16b-lite-instruct-q4_K_M — сложный рефакторинг
+- nomic-embed-text — эмбеддинги (768 измерений)
 
 ═══════════════════════════════════════════════════════════
 
@@ -397,6 +414,18 @@ cd ProjectAIAgent.Host && dotnet run
 - CHANGELOG.md, GitHub Release v1.0.0 с архивами для win-x64 и linux-x64.
 - Docker-образ: docker pull username/aiagent-platform:latest.
 
+ФАЗА 1: ИНДЕКСАЦИЯ ИСХОДНОГО КОДА (ЭТАПЫ 9-12)
+- Расширен DocumentationService для .cs файлов: DiscoverCodeFilesAsync, ChunkCodeFile, IndexCodebaseAsync.
+- Создан CodeChunk (FilePath, Namespace, ClassName, MethodName, Signature, StartLine, EndLine).
+- Реализован SearchCodebaseTool: семантический поиск по коду через Qdrant (коллекция project_docs_code).
+- Реализован FindUsagesTool: поиск всех использований класса/метода в .cs файлах проекта.
+- Доработан OrchestratorAgent: фаза предварительного планирования (search_codebase -> find_usages -> read_file).
+- Интегрирован ChangePlan: план из JSON-ответа LLM, шаги с отслеживанием прогресса.
+- Добавлена поддержка нескольких моделей: simple (7B), default (14B), refactoring (16B).
+- Embedding-модель nomic-embed-text (768 измерений), Ollama с OLLAMA_EMBEDDINGS=1.
+- Обновлён orchestrator.txt: search_codebase и find_usages в workflow.
+- Всего инструментов: 9. Всего агентов: 4. Всего фоновых служб: 4.
+
 ═══════════════════════════════════════════════════════════
 
 ГЛОБАЛЬНАЯ ЦЕЛЬ (NEXT-GEN)
@@ -412,11 +441,17 @@ cd ProjectAIAgent.Host && dotnet run
 
 ФАЗЫ РАЗРАБОТКИ:
 
-ФАЗА 1: ИНДЕКСАЦИЯ ИСХОДНОГО КОДА
-- Расширить DocumentationService на .cs файлы
-- Извлекать структуру: namespace, классы, методы, сигнатуры, using-зависимости
-- Сохранять в Qdrant (коллекция project_code)
-- Реализовать SearchCodebaseTool (семантический поиск по коду)
+ФАЗА 1: ИНДЕКСАЦИЯ ИСХОДНОГО КОДА — ЗАВЕРШЕНА
+- Расширен DocumentationService на .cs файлы (DiscoverCodeFilesAsync, ChunkCodeFile, IndexCodebaseAsync)
+- Создан CodeChunk (FilePath, Namespace, ClassName, MethodName, Signature)
+- Реализован SearchCodebaseTool (семантический поиск по коду через Qdrant, коллекция project_docs_code)
+- Реализован FindUsagesTool (поиск использований класса/метода во всех .cs файлах)
+- Доработан OrchestratorAgent: фаза предварительного планирования (search_codebase → find_usages → read_file перед изменениями)
+- Интегрирован ChangePlan: план формируется из JSON-ответа LLM, шаги выполняются с отслеживанием прогресса
+- DocumentationIndexerService индексирует исходный код при старте в отдельную коллекцию
+- Добавлена embedding-модель nomic-embed-text (768 измерений)
+- Обновлён orchestrator.txt: search_codebase и find_usages в workflow
+- Всего инструментов: 9 (read_file, write_file, project_structure, read_documentation, update_documentation, run_shell_command, git_diff, search_codebase, find_usages)
 
 ФАЗА 2: УЛУЧШЕНИЕ ПЛАНИРОВАНИЯ
 - Предварительный анализ: LLM получает семантический поиск по запросу до начала изменений
@@ -432,7 +467,7 @@ cd ProjectAIAgent.Host && dotnet run
 - Расширение для VS Code / Visual Studio
 - Inline-подсказки и диффы в редакторе
 
-ТЕКУЩАЯ СТАДИЯ: Фаза 1, Этап 9 (индексация исходного кода)
+ТЕКУЩАЯ СТАДИЯ: Все 8 этапов завершены. Фаза 1 (индексация исходного кода, этапы 9-12) завершена. Фаза 2 (улучшение планирования, этапы 13-14) — следующая.
 
 ═══════════════════════════════════════════════════════════
 

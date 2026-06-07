@@ -22,6 +22,7 @@ public class OrchestratorAgent : BaseAgent
     private readonly ReportService _reportService;
     private readonly MetricsService _metricsService;
     private const int MaxIterations = 10;
+    private ChangePlan? _currentPlan;
     
     private readonly object? _signalRService;
     
@@ -147,12 +148,52 @@ public class OrchestratorAgent : BaseAgent
                 break;
             }
             
-            if (action == "plan" && actionPlan.TryGetValue("plan", out var planObj))
+            if (action == "plan")
             {
-                // LLM вернула план действий — выполняем шаги последовательно
-                var plan = planObj as System.Text.Json.JsonElement?;
+                // Создаём ChangePlan из ответа LLM
+                _currentPlan = new ChangePlan
+                {
+                    UserRequest = userRequest,
+                    Summary = TryGetStringField(actionPlan, "summary") ?? "Plan",
+                    Status = PlanStatus.InProgress
+                };
+
+                if (actionPlan.TryGetValue("steps", out var stepsObj) && stepsObj is JsonElement stepsArray)
+                {
+                    int order = 0;
+                    foreach (var stepElement in stepsArray.EnumerateArray())
+                    {
+                        var step = new ChangeStep
+                        {
+                            Order = order++,
+                            ToolName = stepElement.TryGetProperty("tool", out var tn) ? tn.GetString() ?? "" : "",
+                            Description = stepElement.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                            FilePath = stepElement.TryGetProperty("file_path", out var fp) ? fp.GetString() : null
+                        };
+
+                        if (stepElement.TryGetProperty("args", out var argsEl))
+                        {
+                            foreach (var prop in argsEl.EnumerateObject())
+                            {
+                                step.Arguments[prop.Name] = prop.Value.ValueKind switch
+                                {
+                                    JsonValueKind.String => prop.Value.GetString()!,
+                                    JsonValueKind.Number => prop.Value.TryGetInt32(out var i) ? i : prop.Value.GetDouble(),
+                                    _ => prop.Value.GetRawText()
+                                };
+                            }
+                        }
+
+                        _currentPlan.Steps.Add(step);
+                    }
+                }
+
+                Logger.LogInformation("ChangePlan created: {Steps} steps", _currentPlan.Steps.Count);
+
+                conversationHistory.AppendLine();
                 conversationHistory.AppendLine($"[ASSISTANT]: {llmResponse}");
-                conversationHistory.AppendLine("[USER]: Execute the plan step by step. Start with the first tool call.");
+                conversationHistory.AppendLine($"[PLAN]: {_currentPlan.ToPromptString()}");
+                conversationHistory.AppendLine("[USER]: Plan accepted. Execute step 1. Respond with action:'delegate' for the first tool call.");
                 continue;
             }
 
@@ -209,11 +250,28 @@ public class OrchestratorAgent : BaseAgent
                 await SendToolExecutionAsync(toolName!, toolSuccess, toolResult.Truncate(200));
                 
                 if (toolSuccess)
+                {
                     RegisterToolSuccess(toolName, actionPlan);
+                    
+                    // Обновляем текущий шаг в ChangePlan
+                    if (_currentPlan != null)
+                    {
+                        var currentStep = _currentPlan.GetNextPendingStep();
+                        if (currentStep != null)
+                            _currentPlan.MarkStepCompleted(currentStep.Order, toolResult);
+                    }
+                }
                 else
                 {
                     _contextAgent.RegisterError();
                     errors.Add($"Tool '{toolName}' failed: {toolResult}!");
+                    
+                    if (_currentPlan != null)
+                    {
+                        var currentStep = _currentPlan.GetNextPendingStep();
+                        if (currentStep != null)
+                            _currentPlan.MarkStepFailed(currentStep.Order, toolResult);
+                    }
                 }
                 
                 conversationHistory.AppendLine();
@@ -232,7 +290,24 @@ public class OrchestratorAgent : BaseAgent
                 }
                 else
                 {
-                    conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? Respond ONLY with JSON.");
+                    if (_currentPlan != null)
+                    {
+                        var nextStep = _currentPlan.GetNextPendingStep();
+                        if (nextStep != null)
+                        {
+                            conversationHistory.AppendLine($"[USER]: Step {nextStep.Order + 1}/{_currentPlan.TotalSteps} completed. " +
+                                $"Progress: {_currentPlan.ProgressPercent}%. " +
+                                $"Next: [{nextStep.ToolName}] {nextStep.Description}. Respond with action:'delegate'.");
+                        }
+                        else
+                        {
+                            conversationHistory.AppendLine("[USER]: All plan steps completed. Run 'dotnet build' to validate, then report.");
+                        }
+                    }
+                    else
+                    {
+                        conversationHistory.AppendLine("[USER]: Based on this result, what's your next step? Respond ONLY with JSON.");
+                    }
                 }
                 continue;
             }
@@ -286,6 +361,11 @@ public class OrchestratorAgent : BaseAgent
             ToolCallCount = toolCallCount
         };
         
+        // Добавляем план в отчёт, если он есть
+        if (_currentPlan != null)
+        {
+            reportData.Message = finalMessage + "\n\n" + _currentPlan.ToPromptString();
+        }
         var report = _reportService.GenerateReport(reportData);
         await SendFinalResultAsync(success, report);
         
